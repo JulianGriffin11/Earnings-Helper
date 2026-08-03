@@ -549,7 +549,6 @@ cd frontend
 npm install
 npm run dev
 ```
-
 Open http://localhost:5173, search for a ticker, and view the YoY report + debrief.
 
 ---
@@ -605,3 +604,4 @@ Open http://localhost:5173, search for a ticker, and view the YoY report + debri
 - **Analyst estimates** — compare actual vs consensus (requires additional data source)
 - **Swap LLM provider** — Anthropic, local models, etc.
 - **Export** — PDF or CSV download of report + debrief
+
