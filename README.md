@@ -136,8 +136,8 @@ File: `backend/app/services/extractor.py`
 #### 1.5 Test with Amazon
 
 ```bash
-# Prove it works: fetch AMZN revenue history
-pytest backend/tests/test_sec_client.py -v
+# Prove it works: normalize AMZN revenue history from a frozen fixture
+uv run pytest tests/test_extractor.py tests/test_resolver.py -v
 ```
 
 Save a frozen copy of the SEC JSON response in `backend/tests/fixtures/amzn_revenues.json` so tests don't hit the live API.
@@ -146,7 +146,7 @@ Save a frozen copy of the SEC JSON response in `backend/tests/fixtures/amzn_reve
 - [x] SEC client with User-Agent and caching
 - [x] Ticker/name → CIK resolution
 - [x] Fetch one XBRL concept for one company
-- [ ] Unit test with frozen fixture
+- [x] Unit test with frozen fixture
 
 ---
 
