@@ -9,6 +9,7 @@ Requires-Dist: httpx
 Requires-Dist: pydantic
 Requires-Dist: pydantic-settings
 Requires-Dist: pyyaml
+Requires-Dist: ipykernel>=7.3.0
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Requires-Dist: pytest-asyncio; extra == "dev"

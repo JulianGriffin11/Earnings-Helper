@@ -91,7 +91,7 @@ OPENAI_API_KEY=sk-...
 
 #### 1.2 Build the SEC HTTP client
 
-File: `backend/app/services/sec_client.py`
+File: `backend/app/services/ingest.py`
 
 - Use `httpx` for async HTTP requests
 - Set `User-Agent` header from env on every request
@@ -118,7 +118,7 @@ CIK must be **zero-padded to 10 digits** (e.g. Amazon = `0001018724`).
 
 #### 1.3 Build ticker lookup
 
-File: `backend/app/services/ticker_lookup.py`
+File: `backend/app/services/resolver.py`
 
 - Load `company_tickers.json` and build a lookup map
 - Support search by ticker (`AMZN`) or partial company name (`Amazon`)
@@ -126,7 +126,7 @@ File: `backend/app/services/ticker_lookup.py`
 
 #### 1.4 Build XBRL parser (start with one metric)
 
-File: `backend/app/services/xbrl_parser.py`
+File: `backend/app/services/extractor.py`
 
 - Fetch a single concept (start with `Revenues`) for a CIK
 - Filter results to the correct form type (`10-Q` or `10-K`)
@@ -143,9 +143,9 @@ pytest backend/tests/test_sec_client.py -v
 Save a frozen copy of the SEC JSON response in `backend/tests/fixtures/amzn_revenues.json` so tests don't hit the live API.
 
 **Phase 1 checklist:**
-- [ ] SEC client with User-Agent and caching
-- [ ] Ticker/name → CIK resolution
-- [ ] Fetch one XBRL concept for one company
+- [x] SEC client with User-Agent and caching
+- [x] Ticker/name → CIK resolution
+- [x] Fetch one XBRL concept for one company
 - [ ] Unit test with frozen fixture
 
 ---
@@ -497,9 +497,9 @@ Earnings_Helper/
 │   │   │   ├── reports.py
 │   │   │   └── search.py
 │   │   ├── services/
-│   │   │   ├── sec_client.py
-│   │   │   ├── ticker_lookup.py
-│   │   │   ├── xbrl_parser.py
+│   │   │   ├── ingest.py
+│   │   │   ├── resolver.py
+│   │   │   ├── extractor.py
 │   │   │   ├── yoy_calculator.py
 │   │   │   ├── debrief_agent.py
 │   │   │   └── report_service.py
