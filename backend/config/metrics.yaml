@@ -1,2 +1,25 @@
 # Income-statement line items for YoY analysis (Phase 2).
 # Each entry: label, primary XBRL tag, optional fallback tags.
+
+metrics:
+  - label: Revenue
+    primary: Revenues
+    fallbacks:
+      - RevenueFromContractWithCustomerExcludingAssessedTax
+      - SalesRevenueNet
+
+  - label: Operating Expenses
+    primary: OperatingExpenses
+    fallbacks:
+      - CostsAndExpenses
+      - OtherCostAndExpenseOperating
+
+  - label: Gross Profit
+    primary: GrossProfit
+    fallbacks: []
+    derive: revenue_minus_cogs
+
+  - label: Net Income
+    primary: NetIncomeLoss
+    fallbacks:
+      - NetIncomeLossAvailableToCommonStockholdersBasic

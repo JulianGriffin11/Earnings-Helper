@@ -15,3 +15,5 @@ earnings_helper.egg-info/SOURCES.txt
 earnings_helper.egg-info/dependency_links.txt
 earnings_helper.egg-info/requires.txt
 earnings_helper.egg-info/top_level.txt
+tests/test_extractor.py
+tests/test_resolver.py

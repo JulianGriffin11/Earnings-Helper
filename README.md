@@ -76,7 +76,7 @@ Work through these phases in order. Each phase builds on the last.
 #### 1.1 Set up the backend project
 
 ```bash
-mkdir -p backend/app/{routes,services,models,db} backend/config backend/tests/fixtures
+mkdir -p backend/app/{routes,services,models,db} backend/config backend/playground
 cd backend
 # Create pyproject.toml with: fastapi, uvicorn, httpx, pydantic, pyyaml, pytest
 ```
@@ -133,40 +133,35 @@ File: `backend/app/services/extractor.py`
 - Normalize facts: prefer duration entries, use `end` date for period matching
 - On duplicate values for the same period, keep the one with the latest `filed` date
 
-#### 1.5 Test with Amazon
+#### 1.5 Smoke test with Amazon
 
 ```bash
-# Prove it works: normalize AMZN revenue history from a frozen fixture
-uv run pytest tests/test_extractor.py tests/test_resolver.py -v
+cd backend
+uv run python playground/test_ingest.py
 ```
-
-Save a frozen copy of the SEC JSON response in `backend/tests/fixtures/amzn_revenues.json` so tests don't hit the live API.
 
 **Phase 1 checklist:**
 - [x] SEC client with User-Agent and caching
 - [x] Ticker/name → CIK resolution
 - [x] Fetch one XBRL concept for one company
-- [x] Unit test with frozen fixture
+- [x] Playground smoke test against live SEC
 
 ---
 
 ### Phase 2 — YoY Engine
 
-**Goal:** Compute quarterly and annual YoY changes for all standard line items.
+**Goal:** Compute quarterly and annual YoY changes for configured income-statement metrics.
 
 #### 2.1 Create metrics config
 
-File: `backend/config/metrics.yaml`
+File: `backend/config/metrics.yaml`  
+Loader: `backend/app/core/load_metrics.py`
 
 | Display Label | Primary XBRL Tag | Fallback Tags |
 |---|---|---|
 | Revenue | `Revenues` | `RevenueFromContractWithCustomerExcludingAssessedTax`, `SalesRevenueNet` |
-| Cost of Revenue | `CostOfRevenue` | `CostOfGoodsAndServicesSold` |
+| Operating Expenses | `OperatingExpenses` | `CostsAndExpenses`, `OtherCostAndExpenseOperating` |
 | Gross Profit | `GrossProfit` | derived: Revenue − COGS if missing |
-| R&D | `ResearchAndDevelopmentExpense` | — |
-| SG&A | `SellingGeneralAndAdministrativeExpense` | — |
-| Total OpEx | `OperatingExpenses` | — |
-| Operating Income | `OperatingIncomeLoss` | — |
 | Net Income | `NetIncomeLoss` | `NetIncomeLossAvailableToCommonStockholdersBasic` |
 
 #### 2.2 Build the YoY calculator
@@ -174,18 +169,18 @@ File: `backend/config/metrics.yaml`
 File: `backend/app/services/yoy_calculator.py`
 
 **Quarterly YoY (10-Q):**
-- Find the most recently filed quarter (e.g. `fp=Q3`, `end=2025-09-30`)
-- Find the same fiscal quarter one year prior (`end=2024-09-30`)
+- Anchor period dates from Revenue (latest `10-Q` `end` vs same `end` one year prior)
+- Loop metrics from `metrics.yaml`; try primary tag then fallbacks at those dates
 - Compute for each metric:
-  - `delta = current - prior`
-  - `pct_change = (current / prior - 1) * 100` (handle `prior == 0` safely)
+  - `dollar_change = current - prior`
+  - `pct_change = (current / prior - 1) * 100` (omit pct when `prior == 0`)
 
 **Annual YoY (10-K):**
-- Same logic using `form=10-K` and `fp=FY`
+- Same logic using latest `10-K` period ends
 
 **Normalization rules (critical — prevents bad numbers):**
 1. Match periods by `end` date, not just `fy`
-2. Prefer duration facts (`start` + `end` present) over instant facts
+2. Prefer duration facts (`start` + `end` present) over instant facts (handled in `extractor.py`)
 3. On duplicates, keep the latest `filed` date (handles restatements)
 4. Try primary XBRL tag first, then fallbacks — never mix tags across periods
 5. Validate: value exists, units are USD, form type matches
@@ -194,20 +189,21 @@ Example output:
 
 ```json
 {
-  "company": "Amazon.com Inc.",
+  "company": "AMAZON COM INC",
   "cik": "0001018724",
   "ticker": "AMZN",
-  "as_of_filing": "2025-10-31",
+  "generated_at": "2026-08-04T19:30:00",
   "quarterly": {
-    "period_end": "2025-09-30",
-    "prior_period_end": "2024-09-30",
+    "period_end": "2026-06-30",
+    "prior_period_end": "2025-06-30",
     "metrics": [
       {
         "label": "Revenue",
-        "current": 180000000000,
-        "prior": 158000000000,
-        "delta": 22000000000,
-        "pct_change": 13.9
+        "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "current": 382125000000,
+        "prior": 323369000000,
+        "dollar_change": 58756000000,
+        "pct_change": 18.2
       }
     ]
   },
@@ -215,20 +211,21 @@ Example output:
 }
 ```
 
-#### 2.3 Test the calculator
+#### 2.3 Validate the calculator
 
 ```bash
-pytest backend/tests/test_yoy_calculator.py -v
+cd backend
+uv run python playground/test_yoy.py
 ```
 
-Test with fixtures for AMZN and AAPL. Spot-check output against the actual 10-Q/10-K.
+Writes one JSON file per run to `backend/artifacts/{TICKER}_{date}.json` for manual spot-checks against SEC filings.
 
 **Phase 2 checklist:**
-- [ ] `metrics.yaml` with 8 line items + fallback tags
-- [ ] Quarterly YoY matching by `end` date
-- [ ] Annual YoY matching
-- [ ] Edge cases: missing tags, zero prior, restatements
-- [ ] Unit tests with frozen fixtures
+- [x] `metrics.yaml` with line items + fallback tags
+- [x] Quarterly YoY matching by `end` date
+- [x] Annual YoY matching
+- [x] Playground smoke test + artifact JSON for spot-checks
+- [ ] Edge cases: missing tags, zero prior, restatements (deferred)
 
 ---
 
@@ -493,6 +490,9 @@ Earnings_Helper/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py
+│   │   ├── core/
+│   │   │   ├── settings.py
+│   │   │   └── load_metrics.py
 │   │   ├── routes/
 │   │   │   ├── reports.py
 │   │   │   └── search.py
@@ -512,8 +512,10 @@ Earnings_Helper/
 │   ├── alembic/
 │   ├── config/
 │   │   └── metrics.yaml
-│   ├── tests/
-│   │   └── fixtures/
+│   ├── playground/
+│   │   ├── test_ingest.py
+│   │   └── test_yoy.py
+│   ├── artifacts/          # gitignored; one JSON per YoY run for spot-checks
 │   ├── pyproject.toml
 │   └── .env.example
 ├── frontend/
