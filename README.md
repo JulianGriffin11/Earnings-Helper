@@ -222,9 +222,12 @@ Writes one JSON file per run to `backend/artifacts/{TICKER}_{date}.json` for man
 
 **Phase 2 checklist:**
 - [x] `metrics.yaml` with line items + fallback tags
+- [x] `load_metrics.py` loader
+- [x] `yoy_calculator.py` (generic metric loop)
 - [x] Quarterly YoY matching by `end` date
 - [x] Annual YoY matching
-- [x] Playground smoke test + artifact JSON for spot-checks
+- [x] Playground smoke test (`playground/test_yoy.py`)
+- [x] Artifact JSON per run for spot-checks (`artifacts/`)
 - [ ] Edge cases: missing tags, zero prior, restatements (deferred)
 
 ---
