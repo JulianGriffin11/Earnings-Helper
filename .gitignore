@@ -3,7 +3,14 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+*.egg-info/
+*.egg
+build/
+
+# Env (keep checked-in examples)
 .env
+.env.*
+!.env.example
 
 # Node
 node_modules/
@@ -20,4 +27,7 @@ dist/
 # Test / cache
 .pytest_cache/
 .coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 backend/artifacts/

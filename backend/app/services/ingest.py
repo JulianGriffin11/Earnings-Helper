@@ -22,6 +22,9 @@ def get_company_concept_url(cik: str, concept: str, taxonomy: str = "us-gaap") -
     return f"{BASE_DATA_URL}/api/xbrl/companyconcept/CIK{cik.zfill(10)}/{taxonomy}/{concept}.json"
 
 
+FILING_FORMS = frozenset({"10-Q", "10-K"})
+
+
 class SECClient:
     """Async HTTP client for SEC EDGAR with automatic rate limiting and caching."""
 
@@ -90,3 +93,16 @@ class SECClient:
 
     async def __aexit__(self, *args: object) -> None:
         await self.close()
+
+
+async def latest_filing_date(client: SECClient, cik: str) -> str | None:
+    """Latest filingDate among recent 10-Q and 10-K filings."""
+    submissions = await client.fetch_json(get_submissions_url(cik))
+    recent = submissions["filings"]["recent"]
+    latest: str | None = None
+    for form, filing_date in zip(
+        recent["form"], recent["filingDate"], strict=True
+    ):
+        if form in FILING_FORMS and (latest is None or filing_date > latest):
+            latest = filing_date
+    return latest

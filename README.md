@@ -44,7 +44,7 @@ flowchart LR
 | YoY math | Deterministic Python | Auditable, testable, no hallucinated numbers |
 | LLM | Debrief/narrative layer only | Hands-on LLM experience; interprets pre-computed data, never does arithmetic |
 | LLM output | Pydantic structured output | Consistent debrief format; easy to render and store |
-| Database | Postgres via Docker | Cache LLM debriefs + report history without over-engineering |
+| Database | Postgres via Supabase | Cache LLM debriefs + report history without over-engineering |
 | Backend | Python + FastAPI | Async-friendly; Pydantic shared across API, LLM, and DB |
 | Frontend | React (Vite) | Search bar, YoY tables, debrief panel, report history |
 
@@ -56,7 +56,7 @@ Before building, install:
 
 - **Python 3.11+**
 - **Node.js 18+** (for the React frontend)
-- **Docker Desktop** (for Postgres)
+- **Supabase account** (for Postgres — Phase 3)
 - **OpenAI API key** (or Anthropic — for the LLM debrief layer)
 
 You'll also need a contact email for the SEC `User-Agent` header (required by SEC policy).
@@ -85,7 +85,7 @@ Create `.env.example`:
 
 ```env
 SEC_USER_AGENT=EarningsHelper your-email@example.com
-DATABASE_URL=postgresql://earnings:earnings@localhost:5432/earnings_helper
+DATABASE_URL=postgresql://postgres.[ref]:[password]@aws-0-us-east-1.pooler.supabase.com:6543/postgres
 OPENAI_API_KEY=sk-...
 ```
 
@@ -236,29 +236,19 @@ Writes one JSON file per run to `backend/artifacts/{TICKER}_{date}.json` for man
 
 **Goal:** Persist reports and debriefs; cache results to avoid repeat SEC + LLM calls.
 
-#### 3.1 Docker Compose for Postgres
+#### 3.1 Supabase Postgres
 
-File: `docker-compose.yml`
+Create a [Supabase](https://supabase.com) project and add to `backend/.env`:
 
-```yaml
-services:
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: earnings
-      POSTGRES_PASSWORD: earnings
-      POSTGRES_DB: earnings_helper
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
-volumes:
-  pgdata:
+```env
+DATABASE_URL=postgresql://postgres.[ref]:[password]@aws-0-us-east-1.pooler.supabase.com:6543/postgres
 ```
 
+Use the **connection pooler** URL (port 6543) for the app and playground scripts. For Alembic migrations, use the **direct** connection string (port 5432) if `alembic upgrade head` fails through the pooler.
+
 ```bash
-docker compose up -d
+cd backend
+alembic upgrade head
 ```
 
 #### 3.2 Database schema (3 tables)
@@ -310,8 +300,6 @@ Files:
 
 ```bash
 cd backend
-alembic init alembic
-alembic revision --autogenerate -m "initial schema"
 alembic upgrade head
 ```
 
@@ -321,14 +309,24 @@ File: `backend/app/services/report_service.py`
 
 Orchestration logic:
 1. Check Postgres for existing report matching ticker + latest filing date
-2. If fresh cache hit → return cached report + debrief
+2. If fresh cache hit → return cached report (+ debrief in Phase 4)
 3. If miss → fetch SEC → compute YoY → save report → (Phase 4) generate debrief → save debrief
 
+Validate cache behavior:
+
+```bash
+cd backend
+uv run python playground/test_report_service.py
+```
+
+First run prints `cached: false`; second run prints `cached: true`.
+
 **Phase 3 checklist:**
-- [ ] Docker Compose Postgres running
-- [ ] SQLAlchemy models for Company, Report, Debrief
-- [ ] Alembic migration applied
-- [ ] Report service with cache hit/miss logic
+- [x] Supabase Postgres connected (`DATABASE_URL` in `.env`)
+- [x] SQLAlchemy models for Company, Report, Debrief
+- [x] Alembic migration applied
+- [x] Report service with cache hit/miss logic
+- [x] Playground smoke test (`playground/test_report_service.py`)
 
 ---
 
@@ -517,7 +515,8 @@ Earnings_Helper/
 │   │   └── metrics.yaml
 │   ├── playground/
 │   │   ├── test_ingest.py
-│   │   └── test_yoy.py
+│   │   ├── test_yoy.py
+│   │   └── test_report_service.py
 │   ├── artifacts/          # gitignored; one JSON per YoY run for spot-checks
 │   ├── pyproject.toml
 │   └── .env.example
@@ -530,7 +529,6 @@ Earnings_Helper/
 │   │   │   └── ReportHistory.tsx
 │   │   └── api/client.ts
 │   └── package.json
-├── docker-compose.yml
 └── README.md
 ```
 
@@ -539,14 +537,13 @@ Earnings_Helper/
 ## Running Locally (Once Built)
 
 ```bash
-# 1. Start Postgres
-docker compose up -d
-
-# 2. Set up backend
+# 1. Apply database schema (Supabase DATABASE_URL in backend/.env)
 cd backend
-cp .env.example .env   # fill in your keys
-pip install -e ".[dev]"
+cp .env.example .env   # fill in SEC_USER_AGENT and DATABASE_URL
+uv sync
 alembic upgrade head
+
+# 2. Start backend API (Phase 5)
 uvicorn app.main:app --reload
 
 # 3. Start frontend (separate terminal)
@@ -574,7 +571,7 @@ Open http://localhost:5173, search for a ticker, and view the YoY report + debri
 
 **Frontend:** `react`, `vite`, `typescript`
 
-**Infra:** Docker Compose (Postgres)
+**Infra:** Supabase (Postgres)
 
 ---
 
