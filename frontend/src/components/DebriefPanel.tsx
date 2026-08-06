@@ -1,6 +1,13 @@
 import type { ReactNode } from 'react'
 
-import type { EarningsDebrief, MetricHighlight } from '../lib/types'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
+import type { EarningsDebrief, MetricHighlight } from '@/lib/types'
 
 interface DebriefPanelProps {
   debrief: EarningsDebrief | null | undefined
@@ -12,10 +19,10 @@ const assessmentLabels: Record<EarningsDebrief['overall_assessment'], string> = 
   weak: 'Weak',
 }
 
-const headerBadgeClasses: Record<EarningsDebrief['overall_assessment'], string> = {
-  strong: 'bg-white/20 text-white',
-  mixed: 'bg-white/20 text-white',
-  weak: 'bg-white/20 text-white',
+const assessmentStyles: Record<EarningsDebrief['overall_assessment'], string> = {
+  strong: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  mixed: 'border-border bg-muted text-muted-foreground',
+  weak: 'border-red-200 bg-red-50 text-destructive',
 }
 
 function trendLabel(trend: MetricHighlight['trend']): string {
@@ -25,9 +32,9 @@ function trendLabel(trend: MetricHighlight['trend']): string {
 }
 
 function trendColor(trend: MetricHighlight['trend']): string {
-  if (trend === 'up') return 'text-positive'
-  if (trend === 'down') return 'text-negative'
-  return 'text-text'
+  if (trend === 'up') return 'text-emerald-600'
+  if (trend === 'down') return 'text-destructive'
+  return 'text-muted-foreground'
 }
 
 function AnalysisCard({
@@ -38,12 +45,14 @@ function AnalysisCard({
   children: ReactNode
 }) {
   return (
-    <div className="rounded-lg border border-border bg-surface p-4">
-      <h3 className="mb-2 text-xs font-semibold tracking-wide text-accent uppercase">
-        {title}
-      </h3>
-      {children}
-    </div>
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle className="text-xs font-semibold tracking-wide uppercase">
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   )
 }
 
@@ -51,12 +60,12 @@ function BulletList({ items }: { items: string[] }) {
   return (
     <ul className="m-0 list-none space-y-2 p-0">
       {items.map((item) => (
-        <li key={item} className="flex gap-2.5 text-sm leading-relaxed text-text">
+        <li key={item} className="flex gap-2.5 text-sm leading-relaxed">
           <span
-            className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+            className="mt-2 size-1.5 shrink-0 rounded-full bg-primary"
             aria-hidden
           />
-          <span>{item}</span>
+          <span className="text-muted-foreground">{item}</span>
         </li>
       ))}
     </ul>
@@ -66,90 +75,89 @@ function BulletList({ items }: { items: string[] }) {
 export default function DebriefPanel({ debrief }: DebriefPanelProps) {
   if (!debrief) {
     return (
-      <section className="overflow-hidden rounded-xl border border-border bg-bg shadow-[var(--shadow-card)]">
-        <div className="bg-accent px-5 py-3">
-          <h2 className="m-0 text-lg text-white">Earnings Debrief</h2>
-        </div>
-        <p className="p-5 text-sm text-text">No debrief available for this report.</p>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Earnings Debrief</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            No debrief available for this report.
+          </p>
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <section className="overflow-hidden rounded-xl border border-border bg-bg shadow-[var(--shadow-card)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-accent px-5 py-4">
-        <h2 className="m-0 text-lg text-white">Earnings Debrief</h2>
-        <span
-          className={`rounded-full px-3 py-1 text-xs font-semibold tracking-wide uppercase ${headerBadgeClasses[debrief.overall_assessment]}`}
-        >
-          {assessmentLabels[debrief.overall_assessment]}
-        </span>
-      </div>
+    <Card>
+      <CardHeader className="border-b">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <CardTitle>Earnings Debrief</CardTitle>
+          <span
+            className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold tracking-wide ${assessmentStyles[debrief.overall_assessment]}`}
+          >
+            {assessmentLabels[debrief.overall_assessment]}
+          </span>
+        </div>
+      </CardHeader>
 
-      <p className="border-b border-border bg-accent-bg px-5 py-4 text-base leading-snug font-medium text-text-heading">
-        {debrief.headline}
-      </p>
-
-      <div className="space-y-4 p-5">
+      <CardContent className="space-y-4 pt-4">
         <div className="grid gap-4 md:grid-cols-2">
           <AnalysisCard title="Revenue">
-            <p className="mb-1 text-sm font-semibold text-text-heading">
-              {debrief.revenue_analysis.metric}
-            </p>
-            <p className={`mb-2 text-xs font-medium ${trendColor(debrief.revenue_analysis.trend)}`}>
+            <p
+              className={`mb-2 text-xs font-medium ${trendColor(debrief.revenue_analysis.trend)}`}
+            >
               {trendLabel(debrief.revenue_analysis.trend)}
             </p>
-            <p className="text-sm leading-relaxed text-text">
+            <p className="text-sm leading-relaxed text-muted-foreground">
               {debrief.revenue_analysis.summary}
             </p>
           </AnalysisCard>
 
           <AnalysisCard title="Margins">
-            <p className="text-sm leading-relaxed text-text">
+            <p className="text-sm leading-relaxed text-muted-foreground">
               {debrief.margin_analysis}
             </p>
           </AnalysisCard>
         </div>
 
         {debrief.expense_analysis.length > 0 && (
-          <div>
-            <h3 className="mb-3 text-xs font-semibold tracking-wide text-accent uppercase">
-              Expenses
-            </h3>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {debrief.expense_analysis.map((item) => (
-                <div
-                  key={item.metric}
-                  className="rounded-lg border border-border bg-surface px-4 py-3"
-                >
-                  <p className="mb-1 text-sm font-semibold text-text-heading">
-                    {item.metric}
-                  </p>
-                  <p className={`mb-1.5 text-xs font-medium ${trendColor(item.trend)}`}>
-                    {trendLabel(item.trend)}
-                  </p>
-                  <p className="text-sm leading-relaxed text-text">{item.summary}</p>
-                </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {debrief.expense_analysis.map((item) => (
+                <Card key={item.metric} size="sm">
+                  <CardContent className="pt-4">
+                    <p className="mb-1 text-sm font-semibold">{item.metric}</p>
+                    <p
+                      className={`mb-1.5 text-xs font-medium ${trendColor(item.trend)}`}
+                    >
+                      {trendLabel(item.trend)}
+                    </p>
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {item.summary}
+                    </p>
+                  </CardContent>
+                </Card>
               ))}
-            </div>
           </div>
         )}
 
-        <div className="grid gap-6 border-t border-border pt-5 md:grid-cols-2">
+        <Separator />
+
+        <div className="grid gap-6 md:grid-cols-2">
           <div>
-            <h3 className="mb-3 text-xs font-semibold tracking-wide text-accent uppercase">
+            <h3 className="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               Key Takeaways
             </h3>
             <BulletList items={debrief.key_takeaways} />
           </div>
           <div>
-            <h3 className="mb-3 text-xs font-semibold tracking-wide text-accent uppercase">
+            <h3 className="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               Items to Watch
             </h3>
             <BulletList items={debrief.items_to_watch} />
           </div>
         </div>
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   )
 }
