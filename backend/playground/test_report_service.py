@@ -1,7 +1,9 @@
 """Smoke test for report service cache. Run from backend/:
-    uv run python playground/test_report_service.py
+    uv run python playground/test_report_service.py META
+    uv run python playground/test_report_service.py AMZN
 """
 
+import argparse
 import asyncio
 
 from app.core.settings import get_settings
@@ -29,11 +31,7 @@ def print_summary(report: dict) -> None:
             if m["current"] is None:
                 print(f"  {m['label']}: n/a")
                 continue
-            pct = (
-                f"{m['pct_change']:.1f}%"
-                if m["pct_change"] is not None
-                else "n/a"
-            )
+            pct = f"{m['pct_change']:.1f}%" if m["pct_change"] is not None else "n/a"
             print(
                 f"  {m['label']}: ${m['current']:,.0f} "
                 f"(prior ${m['prior']:,.0f}, {pct})"
@@ -41,20 +39,20 @@ def print_summary(report: dict) -> None:
         print()
 
 
-async def main() -> None:
+async def run(ticker: str) -> None:
     settings = get_settings()
     db = get_session_factory()()
 
     try:
         async with SECClient(settings.sec_user_agent) as client:
             print("=== Run 1 (expect cache miss) ===\n")
-            report = await get_or_create_report(client, db, "AMZN")
+            report = await get_or_create_report(client, db, ticker)
             if not report:
                 return
             print_summary(report)
 
             print("=== Run 2 (expect cache hit) ===\n")
-            report2 = await get_or_create_report(client, db, "AMZN")
+            report2 = await get_or_create_report(client, db, ticker)
             if not report2:
                 return
             print_summary(report2)
@@ -69,5 +67,12 @@ async def main() -> None:
         db.close()
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Smoke test report service cache")
+    parser.add_argument("ticker", help="Ticker symbol (e.g. META, AMZN)")
+    args = parser.parse_args()
+    asyncio.run(run(args.ticker.upper()))
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

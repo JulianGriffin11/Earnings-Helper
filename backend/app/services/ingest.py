@@ -82,6 +82,33 @@ class SECClient:
 
         return data
 
+    async def fetch_text(self, url: str, use_cache: bool = True) -> str:
+        """Fetch a text document (e.g. inline XBRL HTML) with rate limiting."""
+        now = time.monotonic()
+
+        if use_cache and url in self._cache:
+            cached_at, data = self._cache[url]
+            if now - cached_at <= self.cache_ttl and isinstance(data, str):
+                return data
+            if url in self._cache:
+                del self._cache[url]
+
+        elapsed = now - self._last_request_at
+        if elapsed < self.min_interval:
+            await asyncio.sleep(self.min_interval - elapsed)
+
+        client = await self._get_client()
+        response = await client.get(url)
+        response.raise_for_status()
+
+        self._last_request_at = time.monotonic()
+        data = response.text
+
+        if use_cache:
+            self._cache[url] = (self._last_request_at, data)
+
+        return data
+
     async def close(self) -> None:
         """Close the underlying HTTP client session."""
         if self._client is not None and not self._client.is_closed:

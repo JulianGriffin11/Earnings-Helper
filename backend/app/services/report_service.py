@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -16,6 +16,8 @@ from app.services.resolver import resolve
 from app.services.yoy_calculator import compute_yoy
 
 PERIOD_TYPES = ("quarterly", "annual")
+# Cached period_end older than this vs filing_date is treated as stale (≈15 months).
+MAX_PERIOD_LAG = timedelta(days=456)
 
 
 def get_company_by_ticker(db: Session, ticker: str) -> Company | None:
@@ -44,18 +46,58 @@ def parse_date(value: str | None) -> date | None:
     return date.fromisoformat(value)
 
 
+def is_stale_cache(reports: dict[str, Report], filing_date: str) -> bool:
+    """True when cached YoY periods are too old relative to the filing date."""
+    if filing_date == "unknown":
+        return False
+
+    quarterly = reports["quarterly"]
+    if quarterly.period_end is None:
+        return False
+
+    filed = date.fromisoformat(filing_date)
+    return quarterly.period_end < filed - MAX_PERIOD_LAG
+
+
 def find_cached_reports(
     db: Session, company_id: int, filing_date: str
 ) -> dict[str, Report] | None:
     rows = (
         db.query(Report)
         .filter_by(company_id=company_id, filing_date=filing_date)
+        .order_by(Report.created_at.desc())
         .all()
     )
-    by_type = {row.period_type: row for row in rows}
-    if all(period_type in by_type for period_type in PERIOD_TYPES):
-        return by_type
-    return None
+    by_type: dict[str, Report] = {}
+    for row in rows:
+        by_type.setdefault(row.period_type, row)
+
+    if not all(period_type in by_type for period_type in PERIOD_TYPES):
+        return None
+    if is_stale_cache(by_type, filing_date):
+        return None
+    return by_type
+
+
+def delete_reports_for_filing(
+    db: Session, company_id: int, filing_date: str
+) -> None:
+    rows = (
+        db.query(Report)
+        .filter_by(company_id=company_id, filing_date=filing_date)
+        .all()
+    )
+    if not rows:
+        return
+
+    report_ids = [row.id for row in rows]
+    db.query(Debrief).filter(Debrief.report_id.in_(report_ids)).delete(
+        synchronize_session=False
+    )
+    db.query(Report).filter(Report.id.in_(report_ids)).delete(
+        synchronize_session=False
+    )
+    db.flush()
 
 
 def find_debrief(db: Session, report_id: int) -> Debrief | None:
@@ -140,6 +182,7 @@ def save_reports(
     filing_date: str,
     yoy: dict[str, Any],
 ) -> dict[str, Report]:
+    delete_reports_for_filing(db, company_id, filing_date)
     saved: dict[str, Report] = {}
     for period_type in PERIOD_TYPES:
         section = yoy[period_type]

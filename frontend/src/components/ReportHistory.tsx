@@ -1,17 +1,10 @@
-import type { HistoryItem } from '../api/client'
+import { formatDate } from '../lib/format'
+import type { HistoryItem } from '../lib/types'
 
 interface ReportHistoryProps {
   items: HistoryItem[]
   activeFilingDate?: string
   onSelect: (filingDate: string) => void
-}
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
 }
 
 export default function ReportHistory({
@@ -21,34 +14,47 @@ export default function ReportHistory({
 }: ReportHistoryProps) {
   if (items.length === 0) {
     return (
-      <aside className="report-history">
-        <h2>History</h2>
-        <p className="muted">No past reports yet.</p>
+      <aside className="overflow-hidden rounded-xl border border-border bg-bg shadow-[var(--shadow-card)]">
+        <div className="border-b border-border bg-surface px-4 py-3">
+          <h2 className="m-0 text-lg text-text-heading">History</h2>
+        </div>
+        <p className="p-4 text-sm text-text">No past reports yet.</p>
       </aside>
     )
   }
 
   return (
-    <aside className="report-history">
-      <h2>History</h2>
-      <ul>
-        {items.map((item) => (
-          <li key={item.report_id}>
-            <button
-              type="button"
-              className={
-                item.filing_date === activeFilingDate ? 'active' : undefined
-              }
-              onClick={() => onSelect(item.filing_date)}
-            >
-              <span className="history-filing">Filed {item.filing_date}</span>
-              {item.period_end && (
-                <span className="history-period">Period {item.period_end}</span>
-              )}
-              <span className="history-created">{formatDate(item.created_at)}</span>
-            </button>
-          </li>
-        ))}
+    <aside className="overflow-hidden rounded-xl border border-border bg-bg shadow-[var(--shadow-card)]">
+      <div className="border-b border-border bg-surface px-4 py-3">
+        <h2 className="m-0 text-lg text-text-heading">History</h2>
+      </div>
+      <ul className="m-0 list-none p-2">
+        {items.map((item) => {
+          const isActive = item.filing_date === activeFilingDate
+          return (
+            <li key={item.report_id} className="mt-1 first:mt-0">
+              <button
+                type="button"
+                className={`flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-lg border px-3 py-2.5 text-left font-[inherit] hover:border-accent-border hover:bg-accent-bg ${
+                  isActive
+                    ? 'border-accent bg-accent-bg text-text-heading'
+                    : 'border-transparent bg-transparent text-text-heading'
+                }`}
+                onClick={() => onSelect(item.filing_date)}
+              >
+                <span className="font-semibold text-accent">
+                  Filed {item.filing_date}
+                </span>
+                {item.period_end && (
+                  <span className="text-xs text-text">Period {item.period_end}</span>
+                )}
+                <span className="text-xs text-text">
+                  {formatDate(item.created_at)}
+                </span>
+              </button>
+            </li>
+          )
+        })}
       </ul>
     </aside>
   )

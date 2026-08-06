@@ -37,7 +37,7 @@ def _normalize_observations(
 ) -> list[NormalizedFact]:
     """Prefer duration facts; for each end date keep the latest filed value."""
     allowed = set(form_types)
-    best: dict[str, tuple[bool, str, NormalizedFact]] = {}
+    best: dict[tuple[str, str | None], tuple[bool, str, NormalizedFact]] = {}
 
     for obs in observations:
         form = obs.get("form")
@@ -49,6 +49,7 @@ def _normalize_observations(
         end = str(obs["end"])
         filed = str(obs["filed"])
         is_duration = _is_duration(obs)
+        start = str(obs["start"]) if "start" in obs else None
         candidate = NormalizedFact(
             end=end,
             filed=filed,
@@ -56,20 +57,22 @@ def _normalize_observations(
             fy=obs.get("fy"),
             fp=obs.get("fp"),
             val=float(obs["val"]),
-            start=str(obs["start"]) if "start" in obs else None,
+            start=start,
         )
 
-        existing = best.get(end)
+        # Keep each duration variant (QTD vs YTD share the same end date).
+        key = (end, start)
+        existing = best.get(key)
         if existing is None:
-            best[end] = (is_duration, filed, candidate)
+            best[key] = (is_duration, filed, candidate)
             continue
 
         existing_is_duration, existing_filed, _ = existing
         # Prefer duration over instant; among equals, keep latest filed.
         if is_duration and not existing_is_duration:
-            best[end] = (is_duration, filed, candidate)
+            best[key] = (is_duration, filed, candidate)
         elif is_duration == existing_is_duration and filed > existing_filed:
-            best[end] = (is_duration, filed, candidate)
+            best[key] = (is_duration, filed, candidate)
 
     return [fact for _, _, fact in sorted(best.values(), key=lambda item: item[2].end)]
 

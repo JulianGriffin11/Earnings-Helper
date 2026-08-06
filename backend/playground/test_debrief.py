@@ -1,6 +1,6 @@
 """Smoke test for debrief agent. Run from backend/:
-    uv run python playground/test_debrief.py              # direct LLM from artifact
-    uv run python playground/test_debrief.py --integration  # full report service pipeline
+    uv run python playground/test_debrief.py AMZN              # direct LLM from artifact
+    uv run python playground/test_debrief.py META --integration  # full report service pipeline
 """
 
 import argparse
@@ -37,14 +37,15 @@ def print_debrief(report: dict) -> None:
     print()
 
 
-def run_direct() -> None:
-    artifact = ARTIFACTS_DIR / "AMZN_2026-08-04.json"
-    if not artifact.exists():
-        matches = sorted(ARTIFACTS_DIR.glob("AMZN_*.json"))
-        artifact = matches[-1] if matches else None
+def find_artifact(ticker: str) -> Path | None:
+    matches = sorted(ARTIFACTS_DIR.glob(f"{ticker}_*.json"))
+    return matches[-1] if matches else None
 
+
+def run_direct(ticker: str) -> None:
+    artifact = find_artifact(ticker)
     if artifact is None:
-        print("No AMZN artifact found. Run playground/test_yoy.py first.")
+        print(f"No {ticker} artifact found. Run playground/test_yoy.py {ticker} first.")
         return
 
     yoy_report = json.loads(artifact.read_text(encoding="utf-8"))
@@ -53,14 +54,14 @@ def run_direct() -> None:
     print_debrief({"debrief": debrief.model_dump(), "debrief_cached": False})
 
 
-async def run_integration() -> None:
+async def run_integration(ticker: str) -> None:
     settings = get_settings()
     db = get_session_factory()()
 
     try:
         async with SECClient(settings.sec_user_agent) as client:
             print("=== Run 1 (expect YoY + debrief generation) ===\n")
-            report = await get_or_create_report(client, db, "AMZN")
+            report = await get_or_create_report(client, db, ticker)
             if not report:
                 return
             print(
@@ -70,7 +71,7 @@ async def run_integration() -> None:
             print_debrief(report)
 
             print("=== Run 2 (expect cached YoY + cached debrief) ===\n")
-            report2 = await get_or_create_report(client, db, "AMZN")
+            report2 = await get_or_create_report(client, db, ticker)
             if not report2:
                 return
             print(
@@ -83,18 +84,20 @@ async def run_integration() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Smoke test debrief agent")
+    parser.add_argument("ticker", help="Ticker symbol (e.g. META, AMZN)")
     parser.add_argument(
         "--integration",
         action="store_true",
         help="Run full report service pipeline (SEC + DB + OpenAI)",
     )
     args = parser.parse_args()
+    ticker = args.ticker.upper()
 
     if args.integration:
-        asyncio.run(run_integration())
+        asyncio.run(run_integration(ticker))
     else:
-        run_direct()
+        run_direct(ticker)
 
 
 if __name__ == "__main__":

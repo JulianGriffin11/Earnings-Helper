@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { searchCompanies, type SearchResult } from '../api/client'
+import { searchCompanies } from '../lib/api'
+import type { SearchResult } from '../lib/types'
 
 interface SearchBarProps {
   onSelect: (ticker: string) => void
@@ -11,12 +12,14 @@ export default function SearchBar({ onSelect, disabled }: SearchBarProps) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [open, setOpen] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (query.trim().length < 2) {
       setResults([])
       setOpen(false)
+      setSearchError(null)
       return
     }
 
@@ -25,9 +28,13 @@ export default function SearchBar({ onSelect, disabled }: SearchBarProps) {
         const data = await searchCompanies(query)
         setResults(data.results)
         setOpen(data.results.length > 0)
-      } catch {
+        setSearchError(null)
+      } catch (err) {
         setResults([])
         setOpen(false)
+        setSearchError(
+          err instanceof Error ? err.message : 'Search unavailable. Try again.',
+        )
       }
     }, 300)
 
@@ -62,27 +69,43 @@ export default function SearchBar({ onSelect, disabled }: SearchBarProps) {
   }
 
   return (
-    <div className="search-bar" ref={wrapperRef}>
-      <form onSubmit={handleSubmit}>
+    <div className="relative mx-auto w-full max-w-xl" ref={wrapperRef}>
+      <form className="flex gap-2 shadow-[var(--shadow-app)]" onSubmit={handleSubmit}>
         <input
           type="text"
+          className="flex-1 rounded-lg border border-border bg-bg px-4 py-3 font-[inherit] text-text-heading outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
           placeholder="Search ticker or company (e.g. AMZN, Amazon)"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           disabled={disabled}
           autoComplete="off"
         />
-        <button type="submit" disabled={disabled || !query.trim()}>
+        <button
+          type="submit"
+          className="cursor-pointer rounded-lg border-none bg-accent px-5 py-3 font-[inherit] font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={disabled || !query.trim()}
+        >
           Analyze
         </button>
       </form>
+
+      {searchError && (
+        <p className="mt-2 text-left text-sm text-negative" role="alert">
+          {searchError}
+        </p>
+      )}
+
       {open && (
-        <ul className="search-dropdown">
+        <ul className="absolute top-[calc(100%+6px)] right-0 left-0 z-10 m-0 list-none rounded-lg border border-border bg-bg p-1 shadow-[var(--shadow-app)]">
           {results.map((result) => (
             <li key={result.cik}>
-              <button type="button" onClick={() => handleSelect(result)}>
-                <strong>{result.ticker}</strong>
-                <span>{result.name}</span>
+              <button
+                type="button"
+                className="flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-md border-none bg-transparent px-3 py-2.5 text-left text-text-heading hover:bg-accent-bg"
+                onClick={() => handleSelect(result)}
+              >
+                <strong className="text-accent">{result.ticker}</strong>
+                <span className="text-sm text-text">{result.name}</span>
               </button>
             </li>
           ))}

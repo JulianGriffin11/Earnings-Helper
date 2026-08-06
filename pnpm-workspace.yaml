@@ -1,0 +1,11 @@
+packages:
+  - frontend
+
+savePrefix: ""
+minimumReleaseAge: 10080
+minimumReleaseAgeStrict: true
+
+onlyBuiltDependencies:
+  - '@tailwindcss/oxide'
+allowBuilds:
+  '@tailwindcss/oxide': set this to true or false

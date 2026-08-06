@@ -1,24 +1,21 @@
 import { useCallback, useState } from 'react'
 
-import {
-  fetchHistory,
-  fetchReport,
-  secEdgarUrl,
-  type HistoryItem,
-  type ReportResponse,
-} from './api/client'
 import DebriefPanel from './components/DebriefPanel'
+import ReportHeader from './components/ReportHeader'
 import ReportHistory from './components/ReportHistory'
 import SearchBar from './components/SearchBar'
+import StatusBanner from './components/StatusBanner'
 import YoYTable from './components/YoYTable'
-import './App.css'
+import { fetchHistory, fetchReport } from './lib/api'
+import { secEdgarUrl } from './lib/sec'
+import type { HistoryItem, Report } from './lib/types'
 
 type LoadState = 'idle' | 'loading' | 'error' | 'success'
 
 export default function App() {
   const [loadState, setLoadState] = useState<LoadState>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [report, setReport] = useState<ReportResponse | null>(null)
+  const [report, setReport] = useState<Report | null>(null)
   const [history, setHistory] = useState<HistoryItem[]>([])
 
   const loadReport = useCallback(
@@ -62,64 +59,70 @@ export default function App() {
     loadReport(report.ticker, { filingDate })
   }
 
+  const isLoading = loadState === 'loading'
+  const hasReport = loadState === 'success' && report
+
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>Earnings Helper</h1>
-        <p className="tagline">YoY analysis and earnings debrief from SEC filings</p>
-        <SearchBar onSelect={handleSelect} disabled={loadState === 'loading'} />
+    <div className="px-6 py-10 pb-16">
+      <header className="mx-auto mb-10 flex max-w-2xl flex-col items-center text-center">
+        <h1 className="mb-2 text-accent">Earnings Helper</h1>
+        <p className="mb-6 text-text">
+          Earnings debrief validated from SEC filings
+        </p>
+        <div className="w-full">
+          <SearchBar onSelect={handleSelect} disabled={isLoading} />
+        </div>
       </header>
 
-      {loadState === 'loading' && (
-        <div className="status-banner loading">Loading report...</div>
-      )}
+      <div className="mx-auto max-w-5xl">
+        {isLoading && (
+          <StatusBanner variant="loading" message="Loading report..." />
+        )}
 
-      {loadState === 'error' && error && (
-        <div className="status-banner error">{error}</div>
-      )}
+        {loadState === 'error' && error && (
+          <StatusBanner variant="error" message={error} />
+        )}
 
-      {loadState === 'success' && report && (
-        <main className="app-main">
-          <div className="report-meta">
-            <div>
-              <h2>
-                {report.ticker} — {report.company}
-              </h2>
-              <p className="muted">
-                Filing date: {report.filing_date}
-                {report.cached && ' · cached'}
-                {report.debrief_cached && ' · debrief cached'}
-              </p>
-            </div>
-            <button type="button" className="refresh-btn" onClick={handleRefresh}>
-              Refresh
-            </button>
-          </div>
-
-          <div className="content-grid">
-            <div className="main-column">
-              <YoYTable title="Quarterly YoY" section={report.quarterly} />
-              <YoYTable title="Annual YoY" section={report.annual} />
-              <DebriefPanel debrief={report.debrief} />
-            </div>
-            <ReportHistory
-              items={history}
-              activeFilingDate={report.filing_date}
-              onSelect={handleHistorySelect}
+        {hasReport && (
+          <main>
+            <ReportHeader
+              report={report}
+              onRefresh={handleRefresh}
+              refreshDisabled={isLoading}
             />
-          </div>
 
-          <footer className="app-footer">
-            <a href={secEdgarUrl(report.cik)} target="_blank" rel="noreferrer">
-              View SEC filings
-            </a>
-          </footer>
-        </main>
-      )}
+            <div className="grid items-start gap-6 max-[900px]:grid-cols-1 grid-cols-[1fr_240px]">
+              <div className="flex flex-col gap-6">
+                <YoYTable title="Quarterly YoY" section={report.quarterly} />
+                <YoYTable title="Annual YoY" section={report.annual} />
+                <DebriefPanel debrief={report.debrief} />
+              </div>
+              <ReportHistory
+                items={history}
+                activeFilingDate={report.filing_date}
+                onSelect={handleHistorySelect}
+              />
+            </div>
 
-      {loadState === 'idle' && (
-        <p className="empty-state">Search for a company to get started.</p>
-      )}
+            <footer className="mt-8 border-t border-border pt-4">
+              <a
+                className="font-medium text-accent hover:text-accent-hover hover:underline"
+                href={secEdgarUrl(report.cik)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                View SEC filings
+              </a>
+            </footer>
+          </main>
+        )}
+
+        {loadState === 'idle' && (
+          <p className="text-center text-text">
+            Search for a company to get started.
+          </p>
+        )}
+      </div>
     </div>
   )
 }

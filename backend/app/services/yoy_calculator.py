@@ -3,16 +3,57 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
 from app.core.load_metrics import load_metrics
 from app.services.extractor import NormalizedFact, extract_concept
+from app.services.filing_extractor import (
+    extract_latest_10q_facts,
+    get_latest_10q,
+    merge_facts,
+    quarterly_facts_lag,
+)
 from app.services.ingest import SECClient
 
 REVENUE_LABEL = "Revenue"
 COGS_TAGS = ["CostOfRevenue", "CostOfGoodsAndServicesSold"]
+DurationPreference = Literal["shortest", "longest"]
+
+
+def duration_days(fact: NormalizedFact) -> int | None:
+    if not fact.start:
+        return None
+    start = date.fromisoformat(fact.start)
+    end = date.fromisoformat(fact.end)
+    return (end - start).days
+
+
+def duration_preference(form: str) -> DurationPreference:
+    return "longest" if form == "10-K" else "shortest"
+
+
+def fact_at_end(
+    facts: list[NormalizedFact],
+    form: str,
+    end: str,
+    *,
+    prefer: DurationPreference,
+) -> NormalizedFact | None:
+    """Pick one fact for a period end (QTD for 10-Q, full year for 10-K)."""
+    duration_candidates = [
+        f for f in facts if f.form == form and f.end == end and f.start
+    ]
+    if duration_candidates:
+        if prefer == "shortest":
+            return min(duration_candidates, key=lambda f: duration_days(f) or 0)
+        return max(duration_candidates, key=lambda f: duration_days(f) or 0)
+
+    instant_candidates = [f for f in facts if f.form == form and f.end == end]
+    if not instant_candidates:
+        return None
+    return max(instant_candidates, key=lambda f: f.filed)
 
 
 def year_ago(end: str) -> str:
@@ -54,12 +95,29 @@ def pick_period_ends(
     if not form_facts:
         return None
 
-    latest = max(form_facts, key=lambda f: f.end)
-    prior_end = year_ago(latest.end)
-    if not any(f.end == prior_end for f in form_facts):
-        return None
+    prefer = duration_preference(form)
+    for end in sorted({f.end for f in form_facts}, reverse=True):
+        if fact_at_end(facts, form, end, prefer=prefer) is None:
+            continue
+        prior_end = year_ago(end)
+        if fact_at_end(facts, form, prior_end, prefer=prefer) is None:
+            continue
+        return end, prior_end
 
-    return latest.end, prior_end
+    return None
+
+
+def select_best_period_ends(
+    facts_lists: list[list[NormalizedFact]],
+    form: str,
+) -> tuple[str, str] | None:
+    """Pick the YoY period pair with the most recent current end across tag fact sets."""
+    best: tuple[str, str] | None = None
+    for facts in facts_lists:
+        ends = pick_period_ends(facts, form)
+        if ends and (best is None or ends[0] > best[0]):
+            best = ends
+    return best
 
 
 def values_at_ends(
@@ -68,12 +126,34 @@ def values_at_ends(
     current_end: str,
     prior_end: str,
 ) -> tuple[float, float] | None:
-    form_facts = [f for f in facts if f.form == form]
-    current = next((f for f in form_facts if f.end == current_end), None)
-    prior = next((f for f in form_facts if f.end == prior_end), None)
+    prefer = duration_preference(form)
+    current = fact_at_end(facts, form, current_end, prefer=prefer)
+    prior = fact_at_end(facts, form, prior_end, prefer=prefer)
     if current is None or prior is None:
         return None
     return current.val, prior.val
+
+
+async def supplement_quarterly_cache(
+    client: SECClient,
+    cik: str,
+    cache: dict[str, list[NormalizedFact]],
+    seed_tags: list[str],
+) -> None:
+    """Merge facts from the latest 10-Q filing when aggregated SEC APIs lag."""
+    latest_10q = await get_latest_10q(client, cik)
+    if latest_10q is None:
+        return
+
+    for tag in seed_tags:
+        await fetch_tag_facts(client, cik, tag, cache)
+
+    if not quarterly_facts_lag(cache, seed_tags, latest_10q["report_date"]):
+        return
+
+    filing_facts = await extract_latest_10q_facts(client, cik, latest_10q)
+    for tag, facts in filing_facts.items():
+        cache[tag] = merge_facts(cache.get(tag, []), facts)
 
 
 async def fetch_tag_facts(
@@ -90,18 +170,18 @@ async def fetch_tag_facts(
     return cache[tag]
 
 
-async def load_facts(
+async def pick_best_period_ends(
     client: SECClient,
     cik: str,
     tags: list[str],
+    form: str,
     cache: dict[str, list[NormalizedFact]],
-) -> tuple[str | None, list[NormalizedFact]]:
-    """Fetch facts using the first XBRL tag that returns data."""
+) -> tuple[str, str] | None:
+    """Try all tags; return the YoY pair with the most recent current period end."""
+    facts_lists: list[list[NormalizedFact]] = []
     for tag in tags:
-        facts = await fetch_tag_facts(client, cik, tag, cache)
-        if facts:
-            return tag, facts
-    return None, []
+        facts_lists.append(await fetch_tag_facts(client, cik, tag, cache))
+    return select_best_period_ends(facts_lists, form)
 
 
 async def values_for_tags(
@@ -203,10 +283,27 @@ async def compute_yoy(client: SECClient, company: dict[str, str]) -> dict[str, A
 
     revenue = next(m for m in metrics if m["label"] == REVENUE_LABEL)
     revenue_tags = [revenue["primary"], *revenue.get("fallbacks", [])]
-    _, revenue_facts = await load_facts(client, cik, revenue_tags, cache)
 
-    quarterly_ends = pick_period_ends(revenue_facts, "10-Q")
-    annual_ends = pick_period_ends(revenue_facts, "10-K")
+    seed_tags = sorted(
+        {
+            *revenue_tags,
+            *[metric["primary"] for metric in metrics],
+            *[
+                fallback
+                for metric in metrics
+                for fallback in metric.get("fallbacks", [])
+            ],
+            *COGS_TAGS,
+        }
+    )
+    await supplement_quarterly_cache(client, cik, cache, seed_tags)
+
+    quarterly_ends = await pick_best_period_ends(
+        client, cik, revenue_tags, "10-Q", cache
+    )
+    annual_ends = await pick_best_period_ends(
+        client, cik, revenue_tags, "10-K", cache
+    )
 
     quarterly = await build_section(
         client, cik, metrics, quarterly_ends, "10-Q", cache

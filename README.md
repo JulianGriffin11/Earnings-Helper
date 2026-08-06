@@ -46,7 +46,7 @@ flowchart LR
 | LLM output | Pydantic structured output | Consistent debrief format; easy to render and store |
 | Database | Postgres via Supabase | Cache LLM debriefs + report history without over-engineering |
 | Backend | Python + FastAPI | Async-friendly; Pydantic shared across API, LLM, and DB |
-| Frontend | React (Vite) | Search bar, YoY tables, debrief panel, report history |
+| Frontend | React (Vite) + Tailwind CSS | Search bar, YoY tables, debrief panel, report history; strict TypeScript, native fetch |
 
 ---
 
@@ -55,7 +55,7 @@ flowchart LR
 Before building, install:
 
 - **Python 3.11+**
-- **Node.js 18+** (for the React frontend)
+- **Node.js 18+** and **pnpm** (for the React frontend)
 - **Supabase account** (for Postgres — Phase 3)
 - **OpenAI API key** (or Anthropic — for the LLM debrief layer)
 
@@ -430,21 +430,34 @@ uv run uvicorn app.main:app --reload
 
 #### 5.2 React frontend
 
-Files: [`frontend/src/api/client.ts`](frontend/src/api/client.ts), components under [`frontend/src/components/`](frontend/src/components/)
+**Stack:** Vite SPA, React 19, strict TypeScript, Tailwind CSS, native `fetch` (no Axios). Package manager is **pnpm** only.
 
-- `SearchBar.tsx` — ticker or company name input with autocomplete
-- `YoYTable.tsx` — quarterly + annual tables (Metric, Current, Prior, $ Change, % Change)
-- `DebriefPanel.tsx` — headline, assessment badge, takeaways, watch items
-- `ReportHistory.tsx` — past analyses for the same ticker
+**Key files:**
+- [`frontend/src/lib/env.ts`](frontend/src/lib/env.ts) — validates `VITE_API_BASE_URL` at startup (single env boundary)
+- [`frontend/src/lib/api.ts`](frontend/src/lib/api.ts) — typed HTTP client
+- [`frontend/src/lib/types/`](frontend/src/lib/types/) — shared API/application types
+- Components under [`frontend/src/components/`](frontend/src/components/)
 
-Vite proxies `/api` → `http://localhost:8000` in dev.
+| Component | Purpose |
+|---|---|
+| `SearchBar.tsx` | Ticker/company search with autocomplete |
+| `YoYTable.tsx` | Quarterly + annual tables (Metric, Current, Prior, $ Change, % Change) |
+| `DebriefPanel.tsx` | Headline, assessment badge, analysis cards, takeaways, watch items |
+| `ReportHistory.tsx` | Past analyses for the same ticker |
+| `ReportHeader.tsx` | Company meta + refresh |
+| `StatusBanner.tsx` | Loading and error banners |
+
+In dev, leave `VITE_API_BASE_URL` empty — Vite proxies `/api` → `http://localhost:8000`.
 
 ```bash
+# from repo root
+pnpm install --frozen-lockfile
 cd frontend
-npm install
-npm run dev
+pnpm run dev
 # UI at http://localhost:5173
 ```
+
+**Production:** set `VITE_API_BASE_URL` to your deployed FastAPI origin (no trailing slash). See [`frontend/.env.example`](frontend/.env.example) and [`frontend/.env.production`](frontend/.env.production).
 
 #### 5.3 First end-to-end test
 
@@ -455,10 +468,10 @@ Run **both** servers (two terminals):
 cd backend
 uv run uvicorn app.main:app --reload
 
-# Terminal 2 — frontend
+# Terminal 2 — frontend (from repo root)
+pnpm install --frozen-lockfile
 cd frontend
-npm install
-npm run dev
+pnpm run dev
 ```
 
 Then open http://localhost:5173, search **AMZN**, and confirm:
@@ -511,6 +524,8 @@ cd backend && pytest -v
 
 ```
 Earnings_Helper/
+├── pnpm-workspace.yaml
+├── package.json
 ├── backend/
 │   ├── app/
 │   │   ├── main.py
@@ -518,6 +533,7 @@ Earnings_Helper/
 │   │   │   ├── settings.py
 │   │   │   └── load_metrics.py
 │   │   ├── routes/
+│   │   │   ├── deps.py
 │   │   │   ├── reports.py
 │   │   │   └── search.py
 │   │   ├── services/
@@ -550,8 +566,17 @@ Earnings_Helper/
 │   │   │   ├── SearchBar.tsx
 │   │   │   ├── YoYTable.tsx
 │   │   │   ├── DebriefPanel.tsx
-│   │   │   └── ReportHistory.tsx
-│   │   └── api/client.ts
+│   │   │   ├── ReportHistory.tsx
+│   │   │   ├── ReportHeader.tsx
+│   │   │   └── StatusBanner.tsx
+│   │   └── lib/
+│   │       ├── env.ts
+│   │       ├── api.ts
+│   │       ├── format.ts
+│   │       ├── sec.ts
+│   │       └── types/
+│   ├── .env.example
+│   ├── .env.production     # template for production builds
 │   └── package.json
 └── README.md
 ```
@@ -570,16 +595,19 @@ alembic upgrade head
 # 2. Start backend API
 uv run uvicorn app.main:app --reload
 
-# 3. Start frontend (separate terminal)
+# 3. Start frontend (separate terminal, from repo root)
+pnpm install --frozen-lockfile
 cd frontend
-npm install
-npm run dev
+cp .env.example .env   # optional for dev; empty VITE_API_BASE_URL uses the Vite proxy
+pnpm run dev
 ```
 Open http://localhost:5173, search for a ticker, and view the YoY report + debrief.
 
 ---
 
 ## Environment Variables
+
+### Backend (`backend/.env`)
 
 | Variable | Description |
 |---|---|
@@ -588,13 +616,19 @@ Open http://localhost:5173, search for a ticker, and view the YoY report + debri
 | `OPENAI_API_KEY` | OpenAI API key for LLM debrief |
 | `OPENAI_MODEL` | OpenAI model (optional, defaults to `gpt-4o-mini`) |
 
+### Frontend (`frontend/.env` or host env)
+
+| Variable | Description |
+|---|---|
+| `VITE_API_BASE_URL` | Public FastAPI origin for production builds (e.g. `https://api.yourdomain.com`). Leave empty in dev to use the Vite `/api` proxy. Never put secrets here — only `VITE_*` vars are exposed to the browser. |
+
 ---
 
 ## Tech Dependencies
 
 **Backend:** `fastapi`, `uvicorn`, `httpx`, `pydantic`, `pyyaml`, `sqlalchemy`, `alembic`, `psycopg2-binary`, `openai`, `pytest`, `pytest-asyncio`
 
-**Frontend:** `react`, `vite`, `typescript`
+**Frontend:** `react`, `vite`, `typescript`, `tailwindcss`, `@tailwindcss/vite` — managed with **pnpm** (exact-pinned direct deps; commit `pnpm-lock.yaml`)
 
 **Infra:** Supabase (Postgres)
 
