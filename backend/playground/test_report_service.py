@@ -13,7 +13,10 @@ from app.services.report_service import get_or_create_report
 
 def print_summary(report: dict) -> None:
     print(f"{report['ticker']} — {report['company']} (CIK {report['cik']})")
-    print(f"filing_date: {report['filing_date']}  cached: {report['cached']}\n")
+    print(
+        f"filing_date: {report['filing_date']}  cached: {report['cached']}  "
+        f"debrief_cached: {report.get('debrief_cached')}\n"
+    )
 
     for section_name in ("quarterly", "annual"):
         section = report[section_name]
@@ -55,6 +58,9 @@ async def main() -> None:
             if not report2:
                 return
             print_summary(report2)
+
+            if report2.get("debrief"):
+                print("debrief headline:", report2["debrief"]["headline"])
 
         companies = db.query(Company).count()
         reports = db.query(Report).count()

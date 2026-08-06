@@ -7,7 +7,10 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Company, Report
+from app.core.settings import get_settings
+from app.db.models import Company, Debrief, Report
+from app.models.debrief import EarningsDebrief
+from app.services.debrief_agent import generate_debrief
 from app.services.ingest import SECClient, latest_filing_date
 from app.services.resolver import resolve
 from app.services.yoy_calculator import compute_yoy
@@ -51,6 +54,27 @@ def find_cached_reports(
     return None
 
 
+def find_debrief(db: Session, report_id: int) -> Debrief | None:
+    return db.query(Debrief).filter_by(report_id=report_id).one_or_none()
+
+
+def save_debrief(
+    db: Session,
+    report_id: int,
+    debrief: EarningsDebrief,
+    model: str,
+) -> Debrief:
+    row = Debrief(
+        report_id=report_id,
+        debrief_json=debrief.model_dump(),
+        model_used=model,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def assemble_payload(
     company: Company,
     reports: dict[str, Report],
@@ -67,6 +91,43 @@ def assemble_payload(
         "filing_date": filing_date,
         "cached": cached,
     }
+
+
+def attach_debrief(
+    payload: dict[str, Any],
+    debrief: EarningsDebrief | dict[str, Any],
+    *,
+    debrief_cached: bool,
+) -> dict[str, Any]:
+    debrief_data = (
+        debrief.model_dump() if isinstance(debrief, EarningsDebrief) else debrief
+    )
+    return {
+        **payload,
+        "debrief": debrief_data,
+        "debrief_cached": debrief_cached,
+    }
+
+
+def ensure_debrief(
+    db: Session,
+    payload: dict[str, Any],
+    reports: dict[str, Report],
+    *,
+    force_refresh: bool,
+) -> dict[str, Any]:
+    quarterly_id = reports["quarterly"].id
+    if not force_refresh:
+        existing = find_debrief(db, quarterly_id)
+        if existing:
+            return attach_debrief(
+                payload, existing.debrief_json, debrief_cached=True
+            )
+
+    settings = get_settings()
+    debrief = generate_debrief(payload, settings=settings)
+    save_debrief(db, quarterly_id, debrief, settings.openai_model)
+    return attach_debrief(payload, debrief, debrief_cached=False)
 
 
 def save_reports(
@@ -89,6 +150,8 @@ def save_reports(
         db.add(row)
         saved[period_type] = row
     db.commit()
+    for row in saved.values():
+        db.refresh(row)
     return saved
 
 
@@ -99,7 +162,7 @@ async def get_or_create_report(
     *,
     force_refresh: bool = False,
 ) -> dict[str, Any] | None:
-    """Return YoY report from cache or compute, persist on miss."""
+    """Return YoY report + debrief from cache or compute, persist on miss."""
     company = await resolve(client, query)
     if not company:
         return None
@@ -109,13 +172,18 @@ async def get_or_create_report(
     if filing_date is None:
         filing_date = "unknown"
 
-    if not force_refresh:
-        cached = find_cached_reports(db, db_company.id, filing_date)
-        if cached:
-            return assemble_payload(
-                db_company, cached, filing_date, cached=True
-            )
+    reports: dict[str, Report] | None = None
+    cached = False
 
-    yoy = await compute_yoy(client, company)
-    reports = save_reports(db, db_company.id, filing_date, yoy)
-    return assemble_payload(db_company, reports, filing_date, cached=False)
+    if not force_refresh:
+        reports = find_cached_reports(db, db_company.id, filing_date)
+        if reports:
+            cached = True
+
+    if reports is None:
+        yoy = await compute_yoy(client, company)
+        reports = save_reports(db, db_company.id, filing_date, yoy)
+        cached = False
+
+    payload = assemble_payload(db_company, reports, filing_date, cached=cached)
+    return ensure_debrief(db, payload, reports, force_refresh=force_refresh)

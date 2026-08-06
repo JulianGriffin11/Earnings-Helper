@@ -370,7 +370,7 @@ File: `backend/app/services/debrief_agent.py`
 
 **User message:** the serialized YoY report JSON from Phase 2.
 
-**Provider:** OpenAI (`gpt-4o-mini`) with structured output / JSON mode, or Anthropic with tool use. Use the `instructor` library or native Pydantic parsing.
+**Provider:** OpenAI (`gpt-4o-mini`) with sync structured output via the official `openai` SDK (Pydantic parsing — no `instructor`).
 
 #### 4.3 Wire into report service
 
@@ -380,20 +380,27 @@ Update `report_service.py`:
 SEC fetch → YoY calc → save Report → LLM debrief → save Debrief → return
 ```
 
-#### 4.4 Test with mocked LLM
+Debrief is stored on the **quarterly** `Report` row. Cache hit returns saved debrief; YoY cached without debrief backfills on read.
+
+#### 4.4 Validate with playground
 
 ```bash
-pytest backend/tests/test_debrief_agent.py -v
+cd backend
+# Direct: OpenAI only, uses artifacts/AMZN_*.json
+uv run python playground/test_debrief.py
+
+# Full pipeline: SEC + Postgres + OpenAI (Run 1 generates, Run 2 caches)
+uv run python playground/test_debrief.py --integration
 ```
 
-Mock the LLM response in tests — don't call the live API in CI.
+Requires `OPENAI_API_KEY` in `.env`.
 
 **Phase 4 checklist:**
-- [ ] Pydantic `EarningsDebrief` schema
-- [ ] Prompt template (system + user message)
-- [ ] OpenAI/Anthropic integration with structured output
-- [ ] Wired into report service pipeline
-- [ ] Unit tests with mocked LLM responses
+- [x] Pydantic `EarningsDebrief` schema
+- [x] Prompt template (system + user message)
+- [x] OpenAI integration with structured output (sync)
+- [x] Wired into report service pipeline
+- [x] Playground smoke test (`playground/test_debrief.py`)
 
 ---
 
@@ -516,7 +523,8 @@ Earnings_Helper/
 │   ├── playground/
 │   │   ├── test_ingest.py
 │   │   ├── test_yoy.py
-│   │   └── test_report_service.py
+│   │   ├── test_report_service.py
+│   │   └── test_debrief.py
 │   ├── artifacts/          # gitignored; one JSON per YoY run for spot-checks
 │   ├── pyproject.toml
 │   └── .env.example
@@ -562,6 +570,7 @@ Open http://localhost:5173, search for a ticker, and view the YoY report + debri
 | `SEC_USER_AGENT` | Contact string for SEC API (required by SEC policy) |
 | `DATABASE_URL` | Postgres connection string |
 | `OPENAI_API_KEY` | OpenAI API key for LLM debrief |
+| `OPENAI_MODEL` | OpenAI model (optional, defaults to `gpt-4o-mini`) |
 
 ---
 
