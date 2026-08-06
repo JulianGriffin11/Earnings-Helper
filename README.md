@@ -410,55 +410,71 @@ Requires `OPENAI_API_KEY` in `.env`.
 
 #### 5.1 FastAPI routes
 
-Files: `backend/app/routes/search.py`, `backend/app/routes/reports.py`
+Files: [`backend/app/routes/search.py`](backend/app/routes/search.py), [`backend/app/routes/reports.py`](backend/app/routes/reports.py), [`backend/app/routes/deps.py`](backend/app/routes/deps.py)
 
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/search?q=amazon` | Autocomplete tickers/names |
 | `GET /api/report?ticker=AMZN` | YoY report + debrief (uses cache if fresh) |
 | `GET /api/report?ticker=AMZN&refresh=true` | Force re-fetch + new debrief |
+| `GET /api/report?ticker=AMZN&filing_date=2026-07-31` | Load a historical snapshot from Postgres |
 | `GET /api/history?ticker=AMZN` | Past reports for this company |
-| `GET /api/health` | Health check |
 
-Response includes both `yoy_data` and `debrief` in one payload.
+Response includes YoY sections (`quarterly`, `annual`) and `debrief` in one payload.
 
 ```bash
 cd backend
-uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload
 # API docs at http://localhost:8000/docs
 ```
 
 #### 5.2 React frontend
 
-```bash
-npm create vite@latest frontend -- --template react-ts
-cd frontend && npm install
-```
+Files: [`frontend/src/api/client.ts`](frontend/src/api/client.ts), components under [`frontend/src/components/`](frontend/src/components/)
 
-Components:
-- `SearchBar.tsx` — ticker or company name input
+- `SearchBar.tsx` — ticker or company name input with autocomplete
 - `YoYTable.tsx` — quarterly + annual tables (Metric, Current, Prior, $ Change, % Change)
 - `DebriefPanel.tsx` — headline, assessment badge, takeaways, watch items
 - `ReportHistory.tsx` — past analyses for the same ticker
 
-UI flow:
-1. User searches → loading: "Fetching SEC data..."
-2. YoY tables render → loading: "Generating debrief..."
-3. Debrief panel renders
-4. Footer: SEC filing link + "Generated at" timestamp
+Vite proxies `/api` → `http://localhost:8000` in dev.
 
 ```bash
 cd frontend
+npm install
 npm run dev
 # UI at http://localhost:5173
 ```
 
+#### 5.3 First end-to-end test
+
+Run **both** servers (two terminals):
+
+```bash
+# Terminal 1 — backend
+cd backend
+uv run uvicorn app.main:app --reload
+
+# Terminal 2 — frontend
+cd frontend
+npm install
+npm run dev
+```
+
+Then open http://localhost:5173, search **AMZN**, and confirm:
+1. Quarterly + annual YoY tables render
+2. Earnings debrief panel appears below
+3. History sidebar lists past runs (after a second lookup or refresh)
+4. **Refresh** forces a new SEC fetch + debrief
+
+First run may take ~10–30s (SEC + OpenAI). Repeat lookup should be much faster (cache hit).
+
 **Phase 5 checklist:**
-- [ ] All API endpoints working
-- [ ] React search bar + YoY tables
-- [ ] Debrief panel with structured output
-- [ ] Report history sidebar/dropdown
-- [ ] Loading and error states
+- [x] API endpoints working (`/api/search`, `/api/report`, `/api/history`)
+- [x] React search bar + YoY tables
+- [x] Debrief panel with structured output
+- [x] Report history sidebar
+- [x] Loading and error states
 
 ---
 
@@ -551,8 +567,8 @@ cp .env.example .env   # fill in SEC_USER_AGENT and DATABASE_URL
 uv sync
 alembic upgrade head
 
-# 2. Start backend API (Phase 5)
-uvicorn app.main:app --reload
+# 2. Start backend API
+uv run uvicorn app.main:app --reload
 
 # 3. Start frontend (separate terminal)
 cd frontend

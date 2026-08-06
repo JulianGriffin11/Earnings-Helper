@@ -18,6 +18,10 @@ from app.services.yoy_calculator import compute_yoy
 PERIOD_TYPES = ("quarterly", "annual")
 
 
+def get_company_by_ticker(db: Session, ticker: str) -> Company | None:
+    return db.query(Company).filter_by(ticker=ticker.upper()).one_or_none()
+
+
 def upsert_company(db: Session, company: dict[str, str]) -> Company:
     row = db.query(Company).filter_by(cik=company["cik"]).one_or_none()
     if row is None:
@@ -187,3 +191,46 @@ async def get_or_create_report(
 
     payload = assemble_payload(db_company, reports, filing_date, cached=cached)
     return ensure_debrief(db, payload, reports, force_refresh=force_refresh)
+
+
+def list_history(db: Session, ticker: str) -> list[dict[str, Any]] | None:
+    """Past quarterly report snapshots for a ticker, newest first."""
+    company = get_company_by_ticker(db, ticker)
+    if not company:
+        return None
+
+    rows = (
+        db.query(Report)
+        .filter_by(company_id=company.id, period_type="quarterly")
+        .order_by(Report.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "filing_date": row.filing_date,
+            "period_end": row.period_end.isoformat() if row.period_end else None,
+            "created_at": row.created_at,
+            "report_id": row.id,
+        }
+        for row in rows
+    ]
+
+
+def get_report_by_filing_date(
+    db: Session, ticker: str, filing_date: str
+) -> dict[str, Any] | None:
+    """Load a cached YoY snapshot (+ debrief if present) from Postgres only."""
+    company = get_company_by_ticker(db, ticker)
+    if not company:
+        return None
+
+    reports = find_cached_reports(db, company.id, filing_date)
+    if not reports:
+        return None
+
+    payload = assemble_payload(company, reports, filing_date, cached=True)
+    existing = find_debrief(db, reports["quarterly"].id)
+    if existing:
+        return attach_debrief(payload, existing.debrief_json, debrief_cached=True)
+
+    return {**payload, "debrief": None, "debrief_cached": False}

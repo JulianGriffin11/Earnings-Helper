@@ -1,122 +1,125 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+import { useCallback, useState } from 'react'
+
+import {
+  fetchHistory,
+  fetchReport,
+  secEdgarUrl,
+  type HistoryItem,
+  type ReportResponse,
+} from './api/client'
+import DebriefPanel from './components/DebriefPanel'
+import ReportHistory from './components/ReportHistory'
+import SearchBar from './components/SearchBar'
+import YoYTable from './components/YoYTable'
 import './App.css'
 
-function App() {
-  const [count, setCount] = useState(0)
+type LoadState = 'idle' | 'loading' | 'error' | 'success'
+
+export default function App() {
+  const [loadState, setLoadState] = useState<LoadState>('idle')
+  const [error, setError] = useState<string | null>(null)
+  const [report, setReport] = useState<ReportResponse | null>(null)
+  const [history, setHistory] = useState<HistoryItem[]>([])
+
+  const loadReport = useCallback(
+    async (ticker: string, options?: { refresh?: boolean; filingDate?: string }) => {
+      setLoadState('loading')
+      setError(null)
+
+      try {
+        const data = await fetchReport(ticker, options)
+        setReport(data)
+
+        try {
+          const historyData = await fetchHistory(data.ticker)
+          setHistory(historyData.items)
+        } catch {
+          setHistory([])
+        }
+
+        setLoadState('success')
+      } catch (err) {
+        setReport(null)
+        setHistory([])
+        setError(err instanceof Error ? err.message : 'Failed to load report')
+        setLoadState('error')
+      }
+    },
+    [],
+  )
+
+  function handleSelect(ticker: string) {
+    loadReport(ticker)
+  }
+
+  function handleRefresh() {
+    if (!report) return
+    loadReport(report.ticker, { refresh: true })
+  }
+
+  function handleHistorySelect(filingDate: string) {
+    if (!report) return
+    loadReport(report.ticker, { filingDate })
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="app">
+      <header className="app-header">
+        <h1>Earnings Helper</h1>
+        <p className="tagline">YoY analysis and earnings debrief from SEC filings</p>
+        <SearchBar onSelect={handleSelect} disabled={loadState === 'loading'} />
+      </header>
 
-      <div className="ticks"></div>
+      {loadState === 'loading' && (
+        <div className="status-banner loading">Loading report...</div>
+      )}
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      {loadState === 'error' && error && (
+        <div className="status-banner error">{error}</div>
+      )}
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+      {loadState === 'success' && report && (
+        <main className="app-main">
+          <div className="report-meta">
+            <div>
+              <h2>
+                {report.ticker} — {report.company}
+              </h2>
+              <p className="muted">
+                Filing date: {report.filing_date}
+                {report.cached && ' · cached'}
+                {report.debrief_cached && ' · debrief cached'}
+              </p>
+            </div>
+            <button type="button" className="refresh-btn" onClick={handleRefresh}>
+              Refresh
+            </button>
+          </div>
+
+          <div className="content-grid">
+            <div className="main-column">
+              <YoYTable title="Quarterly YoY" section={report.quarterly} />
+              <YoYTable title="Annual YoY" section={report.annual} />
+              <DebriefPanel debrief={report.debrief} />
+            </div>
+            <ReportHistory
+              items={history}
+              activeFilingDate={report.filing_date}
+              onSelect={handleHistorySelect}
+            />
+          </div>
+
+          <footer className="app-footer">
+            <a href={secEdgarUrl(report.cik)} target="_blank" rel="noreferrer">
+              View SEC filings
+            </a>
+          </footer>
+        </main>
+      )}
+
+      {loadState === 'idle' && (
+        <p className="empty-state">Search for a company to get started.</p>
+      )}
+    </div>
   )
 }
-
-export default App
