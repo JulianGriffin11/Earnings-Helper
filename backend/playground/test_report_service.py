@@ -10,6 +10,7 @@ from app.db.database import get_session_factory
 from app.db.models import Company, Report
 from app.services.sec_client import SECClient
 from app.services.orchestration import ReportService
+from app.core.logging import ProgressLogger
 
 
 def print_summary(report: dict) -> None:
@@ -46,15 +47,19 @@ def run(ticker: str) -> None:
         with SECClient(settings.sec_user_agent) as client:
             service = ReportService(db, client)
             print("=== Run 1 (expect cache miss) ===\n")
-            report = service.get_or_create_report(ticker)
+            progress = ProgressLogger()
+            report = service.get_or_create_report(ticker, on_progress=progress)
             if not report:
                 return
+            print()
             print_summary(report)
 
             print("=== Run 2 (expect cache hit) ===\n")
-            report2 = service.get_or_create_report(ticker)
+            progress2 = ProgressLogger()
+            report2 = service.get_or_create_report(ticker, on_progress=progress2)
             if not report2:
                 return
+            print()
             print_summary(report2)
 
             if report2.get("debrief"):

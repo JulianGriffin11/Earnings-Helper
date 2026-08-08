@@ -5,26 +5,39 @@ import AppHeader from './components/AppHeader'
 import DebriefPanel from './components/DebriefPanel'
 import LandingHero from './components/LandingHero'
 import ReportLoadingSkeleton from './components/ReportLoadingSkeleton'
+import ReportProgressLog from './components/ReportProgressLog'
 import ReportSummary from './components/ReportSummary'
 import YoYTable from './components/YoYTable'
-import { fetchReport } from './lib/api'
+import { fetchReportStream } from './lib/api'
 import { secEdgarUrl } from './lib/sec'
-import type { Report } from './lib/types'
+import type { ProgressStep, Report } from './lib/types'
 
 type LoadState = 'idle' | 'loading' | 'error' | 'success'
+
+function appendProgressStep(steps: ProgressStep[], message: string): ProgressStep[] {
+  return [
+    ...steps.map((step) => ({ ...step, status: 'done' as const })),
+    { id: crypto.randomUUID(), message, status: 'active' },
+  ]
+}
 
 export default function App() {
   const [loadState, setLoadState] = useState<LoadState>('idle')
   const [error, setError] = useState<string | null>(null)
   const [report, setReport] = useState<Report | null>(null)
+  const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([])
 
   const loadReport = useCallback(
     async (ticker: string, options?: { refresh?: boolean }) => {
       setLoadState('loading')
       setError(null)
+      setProgressSteps([])
 
       try {
-        const data = await fetchReport(ticker, options)
+        const data = await fetchReportStream(ticker, options, (message) => {
+          setProgressSteps((prev) => appendProgressStep(prev, message))
+        })
+        setProgressSteps((prev) => prev.map((step) => ({ ...step, status: 'done' })))
         setReport(data)
         setLoadState('success')
       } catch (err) {
@@ -48,6 +61,7 @@ export default function App() {
   const isLoading = loadState === 'loading'
   const hasReport = loadState === 'success' && report
   const showLanding = loadState === 'idle' || (loadState === 'error' && !report)
+  const showProgress = isLoading || (loadState === 'error' && progressSteps.length > 0)
 
   return (
     <div className="flex min-h-svh flex-col">
@@ -66,6 +80,12 @@ export default function App() {
           />
 
           <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 lg:px-6">
+            {showProgress && (
+              <div className="mb-6">
+                <ReportProgressLog steps={progressSteps} />
+              </div>
+            )}
+
             {isLoading && <ReportLoadingSkeleton />}
 
             {hasReport && (

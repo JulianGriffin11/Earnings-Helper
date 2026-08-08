@@ -1,6 +1,8 @@
 """Smoke test for debrief agent. Run from backend/:
 uv run python playground/test_debrief.py AMZN              # direct LLM from artifact
 uv run python playground/test_debrief.py META --integration  # full report service pipeline
+
+Both modes print timed progress logs.
 """
 
 import argparse
@@ -12,6 +14,7 @@ from app.db.database import get_session_factory
 from app.services.debrief_agent import generate_debrief
 from app.services.sec_client import SECClient
 from app.services.orchestration import ReportService
+from app.core.logging import ProgressLogger
 
 ARTIFACTS_DIR = Path(__file__).resolve().parents[1] / "artifacts"
 
@@ -47,9 +50,14 @@ def run_direct(ticker: str) -> None:
         print(f"No {ticker} artifact found. Run playground/test_yoy.py {ticker} first.")
         return
 
-    yoy_report = json.loads(artifact.read_text(encoding="utf-8"))
+    progress = ProgressLogger()
     print(f"=== Direct debrief from {artifact.name} ===\n")
+    progress(f"Loading {artifact.name}...")
+    yoy_report = json.loads(artifact.read_text(encoding="utf-8"))
+    progress("Generating earnings debrief...")
     debrief = generate_debrief(yoy_report)
+    progress("Debrief ready")
+    print()
     print_debrief({"debrief": debrief.model_dump(), "debrief_cached": False})
 
 
@@ -61,9 +69,11 @@ def run_integration(ticker: str) -> None:
         with SECClient(settings.sec_user_agent) as client:
             service = ReportService(db, client)
             print("=== Run 1 (expect YoY + debrief generation) ===\n")
-            report = service.get_or_create_report(ticker)
+            progress = ProgressLogger()
+            report = service.get_or_create_report(ticker, on_progress=progress)
             if not report:
                 return
+            print()
             print(
                 f"{report['ticker']} — cached: {report['cached']}  "
                 f"debrief_cached: {report.get('debrief_cached')}\n"
@@ -71,9 +81,11 @@ def run_integration(ticker: str) -> None:
             print_debrief(report)
 
             print("=== Run 2 (expect cached YoY + cached debrief) ===\n")
-            report2 = service.get_or_create_report(ticker)
+            progress2 = ProgressLogger()
+            report2 = service.get_or_create_report(ticker, on_progress=progress2)
             if not report2:
                 return
+            print()
             print(
                 f"{report2['ticker']} — cached: {report2['cached']}  "
                 f"debrief_cached: {report2.get('debrief_cached')}\n"

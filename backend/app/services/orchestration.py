@@ -11,6 +11,7 @@ from app.core.settings import get_settings
 from app.db.models import Company, Debrief, Report
 from app.models.debrief import EarningsDebrief
 from app.services.debrief_agent import generate_debrief
+from app.core.logging import ProgressCallback
 from app.services.sec_client import SECClient, latest_filing_date
 from app.services.ticker_resolver import resolve
 from app.services.yoy_calculator import compute_yoy
@@ -85,16 +86,26 @@ class ReportService:
         query: str,
         *,
         force_refresh: bool = False,
+        on_progress: ProgressCallback | None = None,
     ) -> dict[str, Any] | None:
         """Return YoY report + debrief from cache or compute, persist on miss."""
+
+        def emit(message: str) -> None:
+            if on_progress:
+                on_progress(message)
+
         if self.client is None:
             raise ValueError("SEC client required for get_or_create_report")
 
+        emit(f"Looking up {query}...")
         company = resolve(self.client, query)
         if not company:
             return None
 
+        emit(f"Found {company['ticker']} — {company['name']}")
+        emit("Saving company record...")
         db_company = self.upsert_company(company)
+        emit("Fetching latest filing date...")
         filing_date = latest_filing_date(self.client, company["cik"])
         if filing_date is None:
             filing_date = "unknown"
@@ -102,18 +113,26 @@ class ReportService:
         reports: dict[str, Report] | None = None
         cached = False
 
+        emit("Checking cached report...")
         if not force_refresh:
             reports = self.find_cached_reports(db_company.id, filing_date)
             if reports:
                 cached = True
+                emit("Using cached YoY data")
 
         if reports is None:
-            yoy = compute_yoy(self.client, company)
+            emit("Computing YoY metrics from SEC filings...")
+            yoy = compute_yoy(self.client, company, on_progress=on_progress)
+            emit("Saving report to database...")
             reports = self.save_reports(db_company.id, filing_date, yoy)
             cached = False
 
         payload = assemble_payload(db_company, reports, filing_date, cached=cached)
-        return self.ensure_debrief(payload, reports, force_refresh=force_refresh)
+        result = self.ensure_debrief(
+            payload, reports, force_refresh=force_refresh, on_progress=on_progress
+        )
+        emit("Report ready")
+        return result
 
     def list_history(self, ticker: str) -> list[dict[str, Any]] | None:
         """Past quarterly report snapshots for a ticker, newest first."""
@@ -141,8 +160,16 @@ class ReportService:
         self,
         ticker: str,
         filing_date: str,
+        *,
+        on_progress: ProgressCallback | None = None,
     ) -> dict[str, Any] | None:
         """Load a cached YoY snapshot (+ debrief if present) from Postgres only."""
+
+        def emit(message: str) -> None:
+            if on_progress:
+                on_progress(message)
+
+        emit(f"Loading cached report for {ticker.upper()}...")
         company = self.get_company_by_ticker(ticker)
         if not company:
             return None
@@ -151,11 +178,16 @@ class ReportService:
         if not reports:
             return None
 
+        emit("Using cached YoY data")
         payload = assemble_payload(company, reports, filing_date, cached=True)
         existing = self.find_debrief(reports["quarterly"].id)
         if existing:
-            return attach_debrief(payload, existing.debrief_json, debrief_cached=True)
+            emit("Using cached debrief")
+            result = attach_debrief(payload, existing.debrief_json, debrief_cached=True)
+            emit("Report ready")
+            return result
 
+        emit("Report ready")
         return {**payload, "debrief": None, "debrief_cached": False}
 
     def get_company_by_ticker(self, ticker: str) -> Company | None:
@@ -240,15 +272,24 @@ class ReportService:
         reports: dict[str, Report],
         *,
         force_refresh: bool,
+        on_progress: ProgressCallback | None = None,
     ) -> dict[str, Any]:
+
+        def emit(message: str) -> None:
+            if on_progress:
+                on_progress(message)
+
         quarterly_id = reports["quarterly"].id
+        emit("Checking for cached debrief...")
         if not force_refresh:
             existing = self.find_debrief(quarterly_id)
             if existing:
+                emit("Using cached debrief")
                 return attach_debrief(
                     payload, existing.debrief_json, debrief_cached=True
                 )
 
+        emit("Generating earnings debrief...")
         settings = get_settings()
         debrief = generate_debrief(payload, settings=settings)
         self.save_debrief(quarterly_id, debrief, settings.openai_model)

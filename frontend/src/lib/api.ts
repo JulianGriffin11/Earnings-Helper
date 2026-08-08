@@ -52,6 +52,83 @@ export function fetchReport(
   return apiFetch<Report>(`/api/report?${params}`)
 }
 
+function parseSseChunk(chunk: string): { event: string; data: string } | null {
+  let event = 'message'
+  let data = ''
+  for (const line of chunk.split('\n')) {
+    if (line.startsWith('event: ')) event = line.slice(7)
+    if (line.startsWith('data: ')) data += line.slice(6)
+  }
+  if (!data) return null
+  return { event, data }
+}
+
+export function fetchReportStream(
+  ticker: string,
+  options: { refresh?: boolean; filingDate?: string } | undefined,
+  onProgress: (message: string) => void,
+): Promise<Report> {
+  const params = new URLSearchParams({ ticker })
+  if (options?.refresh) params.set('refresh', 'true')
+  if (options?.filingDate) params.set('filing_date', options.filingDate)
+
+  const url = buildApiUrl(`/api/report/stream?${params}`)
+
+  return fetch(url).then(async (response) => {
+    if (!response.ok) {
+      let detail = response.statusText
+      try {
+        const body: unknown = await response.json()
+        const parsedDetail = readErrorDetail(body)
+        if (parsedDetail) detail = parsedDetail
+      } catch {
+        // ignore json parse errors
+      }
+      throw new Error(detail)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) {
+      throw new Error('Streaming is not supported in this browser')
+    }
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const chunks = buffer.split('\n\n')
+      buffer = chunks.pop() ?? ''
+
+      for (const chunk of chunks) {
+        const parsed = parseSseChunk(chunk.trim())
+        if (!parsed) continue
+
+        if (parsed.event === 'progress') {
+          const data = JSON.parse(parsed.data) as { message: string }
+          onProgress(data.message)
+          continue
+        }
+
+        if (parsed.event === 'complete') {
+          const data = JSON.parse(parsed.data) as { report: Report }
+          return data.report
+        }
+
+        if (parsed.event === 'failure') {
+          const data = JSON.parse(parsed.data) as { detail: string }
+          throw new Error(data.detail)
+        }
+      }
+    }
+
+    throw new Error('Report stream ended before completion')
+  })
+}
+
 export function fetchHistory(ticker: string): Promise<HistoryResponse> {
   const params = new URLSearchParams({ ticker })
   return apiFetch<HistoryResponse>(`/api/history?${params}`)
