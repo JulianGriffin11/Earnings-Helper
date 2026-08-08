@@ -8,14 +8,14 @@ from typing import Any, Literal
 import httpx
 
 from app.core.load_metrics import load_metrics
-from app.services.extractor import NormalizedFact, extract_concept
-from app.services.filing_extractor import (
+from app.services.fallback_extractor import (
     extract_latest_10q_facts,
     get_latest_10q,
     merge_facts,
     quarterly_facts_lag,
 )
-from app.services.ingest import SECClient
+from app.services.main_extractor import NormalizedFact, extract_concept
+from app.services.sec_client import SECClient
 
 REVENUE_LABEL = "Revenue"
 COGS_TAGS = ["CostOfRevenue", "CostOfGoodsAndServicesSold"]
@@ -134,29 +134,29 @@ def values_at_ends(
     return current.val, prior.val
 
 
-async def supplement_quarterly_cache(
+def supplement_quarterly_cache(
     client: SECClient,
     cik: str,
     cache: dict[str, list[NormalizedFact]],
     seed_tags: list[str],
 ) -> None:
     """Merge facts from the latest 10-Q filing when aggregated SEC APIs lag."""
-    latest_10q = await get_latest_10q(client, cik)
+    latest_10q = get_latest_10q(client, cik)
     if latest_10q is None:
         return
 
     for tag in seed_tags:
-        await fetch_tag_facts(client, cik, tag, cache)
+        fetch_tag_facts(client, cik, tag, cache)
 
     if not quarterly_facts_lag(cache, seed_tags, latest_10q["report_date"]):
         return
 
-    filing_facts = await extract_latest_10q_facts(client, cik, latest_10q)
+    filing_facts = extract_latest_10q_facts(client, cik, latest_10q)
     for tag, facts in filing_facts.items():
         cache[tag] = merge_facts(cache.get(tag, []), facts)
 
 
-async def fetch_tag_facts(
+def fetch_tag_facts(
     client: SECClient,
     cik: str,
     tag: str,
@@ -164,13 +164,13 @@ async def fetch_tag_facts(
 ) -> list[NormalizedFact]:
     if tag not in cache:
         try:
-            cache[tag] = await extract_concept(client, cik, tag)
+            cache[tag] = extract_concept(client, cik, tag)
         except httpx.HTTPError:
             cache[tag] = []
     return cache[tag]
 
 
-async def pick_best_period_ends(
+def pick_best_period_ends(
     client: SECClient,
     cik: str,
     tags: list[str],
@@ -180,11 +180,11 @@ async def pick_best_period_ends(
     """Try all tags; return the YoY pair with the most recent current period end."""
     facts_lists: list[list[NormalizedFact]] = []
     for tag in tags:
-        facts_lists.append(await fetch_tag_facts(client, cik, tag, cache))
+        facts_lists.append(fetch_tag_facts(client, cik, tag, cache))
     return select_best_period_ends(facts_lists, form)
 
 
-async def values_for_tags(
+def values_for_tags(
     client: SECClient,
     cik: str,
     tags: list[str],
@@ -195,14 +195,14 @@ async def values_for_tags(
 ) -> tuple[str | None, tuple[float, float] | None]:
     """Try each tag until both period ends have values."""
     for tag in tags:
-        facts = await fetch_tag_facts(client, cik, tag, cache)
+        facts = fetch_tag_facts(client, cik, tag, cache)
         vals = values_at_ends(facts, form, current_end, prior_end)
         if vals:
             return tag, vals
     return None, None
 
 
-async def metric_row(
+def metric_row(
     client: SECClient,
     cik: str,
     metric: dict[str, Any],
@@ -218,7 +218,7 @@ async def metric_row(
 
     current_end, prior_end = period_ends
     tags = [metric["primary"], *metric.get("fallbacks", [])]
-    tag, vals = await values_for_tags(
+    tag, vals = values_for_tags(
         client, cik, tags, form, current_end, prior_end, cache
     )
 
@@ -228,7 +228,7 @@ async def metric_row(
     if metric.get("derive") == "revenue_minus_cogs":
         rev = computed.get(REVENUE_LABEL, {})
         if rev.get("current") is not None and rev.get("prior") is not None:
-            _, cogs_vals = await values_for_tags(
+            _, cogs_vals = values_for_tags(
                 client, cik, COGS_TAGS, form, current_end, prior_end, cache
             )
             if cogs_vals:
@@ -239,7 +239,7 @@ async def metric_row(
     return empty_row(label)
 
 
-async def build_section(
+def build_section(
     client: SECClient,
     cik: str,
     metrics: list[dict[str, Any]],
@@ -251,7 +251,7 @@ async def build_section(
     computed: dict[str, dict[str, float | None]] = {}
 
     for metric in metrics:
-        row = await metric_row(
+        row = metric_row(
             client, cik, metric, period_ends, form, cache, computed
         )
         rows.append(row)
@@ -275,7 +275,7 @@ async def build_section(
     }
 
 
-async def compute_yoy(client: SECClient, company: dict[str, str]) -> dict[str, Any]:
+def compute_yoy(client: SECClient, company: dict[str, str]) -> dict[str, Any]:
     """YoY for all configured metrics for a resolved company ({ticker, name, cik})."""
     cik = company["cik"]
     metrics = load_metrics()
@@ -296,19 +296,19 @@ async def compute_yoy(client: SECClient, company: dict[str, str]) -> dict[str, A
             *COGS_TAGS,
         }
     )
-    await supplement_quarterly_cache(client, cik, cache, seed_tags)
+    supplement_quarterly_cache(client, cik, cache, seed_tags)
 
-    quarterly_ends = await pick_best_period_ends(
+    quarterly_ends = pick_best_period_ends(
         client, cik, revenue_tags, "10-Q", cache
     )
-    annual_ends = await pick_best_period_ends(
+    annual_ends = pick_best_period_ends(
         client, cik, revenue_tags, "10-K", cache
     )
 
-    quarterly = await build_section(
+    quarterly = build_section(
         client, cik, metrics, quarterly_ends, "10-Q", cache
     )
-    annual = await build_section(
+    annual = build_section(
         client, cik, metrics, annual_ends, "10-K", cache
     )
 

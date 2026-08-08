@@ -91,9 +91,9 @@ OPENAI_API_KEY=sk-...
 
 #### 1.2 Build the SEC HTTP client
 
-File: `backend/app/services/ingest.py`
+File: `backend/app/services/sec_client.py`
 
-- Use `httpx` for async HTTP requests
+- Use `httpx` for sync HTTP requests
 - Set `User-Agent` header from env on every request
 - Add simple in-memory cache (TTL ~24h) for SEC responses
 - Respect rate limit (~10 requests/second)
@@ -118,7 +118,7 @@ CIK must be **zero-padded to 10 digits** (e.g. Amazon = `0001018724`).
 
 #### 1.3 Build ticker lookup
 
-File: `backend/app/services/resolver.py`
+File: `backend/app/services/ticker_resolver.py`
 
 - Load `company_tickers.json` and build a lookup map
 - Support search by ticker (`AMZN`) or partial company name (`Amazon`)
@@ -126,7 +126,7 @@ File: `backend/app/services/resolver.py`
 
 #### 1.4 Build XBRL parser (start with one metric)
 
-File: `backend/app/services/extractor.py`
+File: `backend/app/services/main_extractor.py`
 
 - Fetch a single concept (start with `Revenues`) for a CIK
 - Filter results to the correct form type (`10-Q` or `10-K`)
@@ -180,7 +180,7 @@ File: `backend/app/services/yoy_calculator.py`
 
 **Normalization rules (critical — prevents bad numbers):**
 1. Match periods by `end` date, not just `fy`
-2. Prefer duration facts (`start` + `end` present) over instant facts (handled in `extractor.py`)
+2. Prefer duration facts (`start` + `end` present) over instant facts (handled in `main_extractor.py`)
 3. On duplicates, keep the latest `filed` date (handles restatements)
 4. Try primary XBRL tag first, then fallbacks — never mix tags across periods
 5. Validate: value exists, units are USD, form type matches
@@ -305,7 +305,7 @@ alembic upgrade head
 
 #### 3.4 Report service (save/load/cache)
 
-File: `backend/app/services/report_service.py`
+File: `backend/app/services/orchestration.py`
 
 Orchestration logic:
 1. Check Postgres for existing report matching ticker + latest filing date
@@ -316,7 +316,7 @@ Validate cache behavior:
 
 ```bash
 cd backend
-uv run python playground/test_report_service.py
+uv run python playground/test_orchestration.py
 ```
 
 First run prints `cached: false`; second run prints `cached: true`.
@@ -326,7 +326,7 @@ First run prints `cached: false`; second run prints `cached: true`.
 - [x] SQLAlchemy models for Company, Report, Debrief
 - [x] Alembic migration applied
 - [x] Report service with cache hit/miss logic
-- [x] Playground smoke test (`playground/test_report_service.py`)
+- [x] Playground smoke test (`playground/test_orchestration.py`)
 
 ---
 
@@ -374,7 +374,7 @@ File: `backend/app/services/debrief_agent.py`
 
 #### 4.3 Wire into report service
 
-Update `report_service.py`:
+Update `orchestration.py`:
 
 ```
 SEC fetch → YoY calc → save Report → LLM debrief → save Debrief → return
@@ -537,12 +537,13 @@ Earnings_Helper/
 │   │   │   ├── reports.py
 │   │   │   └── search.py
 │   │   ├── services/
-│   │   │   ├── ingest.py
-│   │   │   ├── resolver.py
-│   │   │   ├── extractor.py
+│   │   │   ├── sec_client.py
+│   │   │   ├── ticker_resolver.py
+│   │   │   ├── main_extractor.py
+│   │   │   ├── fallback_extractor.py
 │   │   │   ├── yoy_calculator.py
 │   │   │   ├── debrief_agent.py
-│   │   │   └── report_service.py
+│   │   │   └── orchestration.py
 │   │   ├── models/
 │   │   │   ├── report.py
 │   │   │   └── debrief.py
@@ -555,7 +556,7 @@ Earnings_Helper/
 │   ├── playground/
 │   │   ├── test_ingest.py
 │   │   ├── test_yoy.py
-│   │   ├── test_report_service.py
+│   │   ├── test_orchestration.py
 │   │   └── test_debrief.py
 │   ├── artifacts/          # gitignored; one JSON per YoY run for spot-checks
 │   ├── pyproject.toml
@@ -626,7 +627,7 @@ Open http://localhost:5173, search for a ticker, and view the YoY report + debri
 
 ## Tech Dependencies
 
-**Backend:** `fastapi`, `uvicorn`, `httpx`, `pydantic`, `pyyaml`, `sqlalchemy`, `alembic`, `psycopg2-binary`, `openai`, `pytest`, `pytest-asyncio`
+**Backend:** `fastapi`, `uvicorn`, `httpx`, `pydantic`, `pyyaml`, `sqlalchemy`, `alembic`, `psycopg2-binary`, `openai`, `pytest`
 
 **Frontend:** `react`, `vite`, `typescript`, `tailwindcss`, `@tailwindcss/vite` — managed with **pnpm** (exact-pinned direct deps; commit `pnpm-lock.yaml`)
 

@@ -1,13 +1,12 @@
-"""Extract XBRL facts from a filed 10-Q when SEC aggregated APIs lag."""
+"""Fallback XBRL extraction from filed 10-Q HTML when SEC JSON lags."""
 
 from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from typing import Any
 
-from app.services.extractor import NormalizedFact
-from app.services.ingest import SECClient, get_submissions_url
+from app.services.main_extractor import NormalizedFact
+from app.services.sec_client import SECClient, get_submissions_url
 
 _IX_FRACTION = re.compile(
     r"<ix:nonFraction\b([^>]*?)>([^<]+)</ix:nonFraction>",
@@ -22,9 +21,9 @@ def edgar_archive_url(cik: str, accession: str) -> str:
     return f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_nodash}"
 
 
-async def get_latest_10q(client: SECClient, cik: str) -> dict[str, str] | None:
+def get_latest_10q(client: SECClient, cik: str) -> dict[str, str] | None:
     """Most recent 10-Q filing metadata from EDGAR submissions."""
-    submissions = await client.fetch_json(get_submissions_url(cik))
+    submissions = client.fetch_json(get_submissions_url(cik))
     recent = submissions["filings"]["recent"]
     for index, form in enumerate(recent["form"]):
         if form == "10-Q":
@@ -66,7 +65,7 @@ def merge_facts(
     return sorted(by_key.values(), key=lambda fact: fact.end)
 
 
-def _parse_contexts(html: str) -> dict[str, tuple[str | None, str]]:
+def parse_ixbrl_contexts(html: str) -> dict[str, tuple[str | None, str]]:
     contexts: dict[str, tuple[str | None, str]] = {}
     for match in re.finditer(
         r'<xbrli:context id="([^"]+)">.*?<xbrli:period>(.*?)</xbrli:period>',
@@ -94,13 +93,13 @@ def _parse_contexts(html: str) -> dict[str, tuple[str | None, str]]:
     return contexts
 
 
-def _parse_tag(name: str) -> str | None:
+def parse_ixbrl_tag(name: str) -> str | None:
     if name.startswith("us-gaap:"):
         return name.split(":", 1)[1]
     return None
 
 
-def _parse_value(raw: str, attrs: dict[str, str]) -> float | None:
+def parse_ixbrl_value(raw: str, attrs: dict[str, str]) -> float | None:
     cleaned = raw.replace(",", "").strip()
     if not cleaned or cleaned in {"—", "-", "&#8212;"}:
         return None
@@ -121,7 +120,7 @@ def parse_ixbrl_facts(
     filed: str,
 ) -> dict[str, list[NormalizedFact]]:
     """Parse us-gaap ix:nonFraction values from inline XBRL."""
-    contexts = _parse_contexts(html)
+    contexts = parse_ixbrl_contexts(html)
     grouped: dict[str, list[NormalizedFact]] = {}
 
     for match in _IX_FRACTION.finditer(html):
@@ -131,13 +130,13 @@ def parse_ixbrl_facts(
         if not name or not context_ref:
             continue
 
-        tag = _parse_tag(name)
+        tag = parse_ixbrl_tag(name)
         period = contexts.get(context_ref)
         if tag is None or period is None:
             continue
 
         start, end = period
-        val = _parse_value(match.group(2), attrs)
+        val = parse_ixbrl_value(match.group(2), attrs)
         if val is None:
             continue
         fact = NormalizedFact(
@@ -154,9 +153,9 @@ def parse_ixbrl_facts(
     return grouped
 
 
-async def _instance_document_name(client: SECClient, archive_url: str) -> str | None:
+def instance_document_name(client: SECClient, archive_url: str) -> str | None:
     summary_url = f"{archive_url}/FilingSummary.xml"
-    xml_text = await client.fetch_text(summary_url)
+    xml_text = client.fetch_text(summary_url)
     root = ET.fromstring(xml_text)
     for report in root.iter("Report"):
         instance = report.attrib.get("instance")
@@ -165,17 +164,17 @@ async def _instance_document_name(client: SECClient, archive_url: str) -> str | 
     return None
 
 
-async def extract_latest_10q_facts(
+def extract_latest_10q_facts(
     client: SECClient,
     cik: str,
     latest_10q: dict[str, str],
 ) -> dict[str, list[NormalizedFact]]:
     archive_url = edgar_archive_url(cik, latest_10q["accession"])
-    instance = await _instance_document_name(client, archive_url)
+    instance = instance_document_name(client, archive_url)
     if instance is None:
         return {}
 
-    html = await client.fetch_text(f"{archive_url}/{instance}")
+    html = client.fetch_text(f"{archive_url}/{instance}")
     return parse_ixbrl_facts(
         html,
         form="10-Q",

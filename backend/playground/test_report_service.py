@@ -4,13 +4,12 @@
 """
 
 import argparse
-import asyncio
 
 from app.core.settings import get_settings
 from app.db.database import get_session_factory
 from app.db.models import Company, Report
-from app.services.ingest import SECClient
-from app.services.report_service import get_or_create_report
+from app.services.sec_client import SECClient
+from app.services.orchestration import ReportService
 
 
 def print_summary(report: dict) -> None:
@@ -39,20 +38,21 @@ def print_summary(report: dict) -> None:
         print()
 
 
-async def run(ticker: str) -> None:
+def run(ticker: str) -> None:
     settings = get_settings()
     db = get_session_factory()()
 
     try:
-        async with SECClient(settings.sec_user_agent) as client:
+        with SECClient(settings.sec_user_agent) as client:
+            service = ReportService(db, client)
             print("=== Run 1 (expect cache miss) ===\n")
-            report = await get_or_create_report(client, db, ticker)
+            report = service.get_or_create_report(ticker)
             if not report:
                 return
             print_summary(report)
 
             print("=== Run 2 (expect cache hit) ===\n")
-            report2 = await get_or_create_report(client, db, ticker)
+            report2 = service.get_or_create_report(ticker)
             if not report2:
                 return
             print_summary(report2)
@@ -71,7 +71,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Smoke test report service cache")
     parser.add_argument("ticker", help="Ticker symbol (e.g. META, AMZN)")
     args = parser.parse_args()
-    asyncio.run(run(args.ticker.upper()))
+    run(args.ticker.upper())
 
 
 if __name__ == "__main__":

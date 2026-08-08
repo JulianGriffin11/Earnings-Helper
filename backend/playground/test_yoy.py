@@ -4,7 +4,6 @@
 """
 
 import argparse
-import asyncio
 import json
 from datetime import date
 from pathlib import Path
@@ -12,8 +11,8 @@ from typing import Any
 
 from app.core.load_metrics import load_metrics
 from app.core.settings import get_settings
-from app.services.ingest import SECClient
-from app.services.resolver import resolve
+from app.services.sec_client import SECClient
+from app.services.ticker_resolver import resolve
 from app.services.yoy_calculator import (
     REVENUE_LABEL,
     fetch_tag_facts,
@@ -35,7 +34,7 @@ def period_pair_dict(ends: tuple[str, str] | None) -> dict[str, str | None]:
     return {"period_end": ends[0], "prior_period_end": ends[1]}
 
 
-async def build_revenue_tag_debug(
+def build_revenue_tag_debug(
     client: SECClient,
     cik: str,
     tags: list[str],
@@ -44,7 +43,7 @@ async def build_revenue_tag_debug(
     rows: list[dict[str, Any]] = []
 
     for tag in tags:
-        facts = await fetch_tag_facts(client, cik, tag, cache)
+        facts = fetch_tag_facts(client, cik, tag, cache)
         quarterly = pick_period_ends(facts, "10-Q")
         annual = pick_period_ends(facts, "10-K")
         rows.append(
@@ -103,22 +102,22 @@ def print_debug(debug: list[dict[str, Any]]) -> None:
         print()
 
 
-async def run(ticker: str, *, include_debug: bool = True) -> None:
+def run(ticker: str, *, include_debug: bool = True) -> None:
     settings = get_settings()
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    async with SECClient(settings.sec_user_agent) as client:
-        company = await resolve(client, ticker)
+    with SECClient(settings.sec_user_agent) as client:
+        company = resolve(client, ticker)
         if not company:
             return
 
-        yoy = await compute_yoy(client, company)
+        yoy = compute_yoy(client, company)
 
         debug: list[dict[str, Any]] | None = None
         if include_debug:
             revenue = next(m for m in load_metrics() if m["label"] == REVENUE_LABEL)
             revenue_tags = [revenue["primary"], *revenue.get("fallbacks", [])]
-            debug = await build_revenue_tag_debug(client, company["cik"], revenue_tags)
+            debug = build_revenue_tag_debug(client, company["cik"], revenue_tags)
 
         artifact: dict[str, Any] = {
             "generated_at": date.today().isoformat(),
@@ -145,7 +144,7 @@ def main() -> None:
         help="Omit revenue tag debug block from artifact output",
     )
     args = parser.parse_args()
-    asyncio.run(run(args.ticker.upper(), include_debug=not args.no_debug))
+    run(args.ticker.upper(), include_debug=not args.no_debug)
 
 
 if __name__ == "__main__":

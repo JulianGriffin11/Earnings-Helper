@@ -1,17 +1,11 @@
-"""Fetch and normalize XBRL financial facts from SEC.
-
-Responsibilities (Phase 1):
-- Fetch a concept (e.g. Revenues) for a CIK
-- Filter by form type (10-Q / 10-K)
-- Normalize facts by end date, filed date, duration vs instant
-"""
+"""Primary XBRL extraction from SEC companyconcept JSON API."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Iterable, Sequence
 
-from app.services.ingest import SECClient, get_company_concept_url
+from app.services.sec_client import SECClient, get_company_concept_url
 
 DEFAULT_FORM_TYPES = ("10-Q", "10-K")
 
@@ -27,11 +21,11 @@ class NormalizedFact:
     start: str | None = None
 
 
-def _is_duration(fact: dict[str, Any]) -> bool:
+def is_duration(fact: dict[str, Any]) -> bool:
     return "start" in fact and "end" in fact
 
 
-def _normalize_observations(
+def normalize_observations(
     observations: Iterable[dict[str, Any]],
     form_types: Sequence[str],
 ) -> list[NormalizedFact]:
@@ -48,7 +42,7 @@ def _normalize_observations(
 
         end = str(obs["end"])
         filed = str(obs["filed"])
-        is_duration = _is_duration(obs)
+        duration = is_duration(obs)
         start = str(obs["start"]) if "start" in obs else None
         candidate = NormalizedFact(
             end=end,
@@ -64,20 +58,20 @@ def _normalize_observations(
         key = (end, start)
         existing = best.get(key)
         if existing is None:
-            best[key] = (is_duration, filed, candidate)
+            best[key] = (duration, filed, candidate)
             continue
 
         existing_is_duration, existing_filed, _ = existing
         # Prefer duration over instant; among equals, keep latest filed.
-        if is_duration and not existing_is_duration:
-            best[key] = (is_duration, filed, candidate)
-        elif is_duration == existing_is_duration and filed > existing_filed:
-            best[key] = (is_duration, filed, candidate)
+        if duration and not existing_is_duration:
+            best[key] = (duration, filed, candidate)
+        elif duration == existing_is_duration and filed > existing_filed:
+            best[key] = (duration, filed, candidate)
 
     return [fact for _, _, fact in sorted(best.values(), key=lambda item: item[2].end)]
 
 
-async def extract_concept(
+def extract_concept(
     client: SECClient,
     cik: str,
     concept: str,
@@ -87,6 +81,6 @@ async def extract_concept(
 ) -> list[NormalizedFact]:
     """Fetch one XBRL concept and return normalized 10-Q / 10-K USD facts."""
     url = get_company_concept_url(cik, concept, taxonomy=taxonomy)
-    payload = await client.fetch_json(url)
+    payload = client.fetch_json(url)
     usd = payload.get("units", {}).get("USD", [])
-    return _normalize_observations(usd, form_types)
+    return normalize_observations(usd, form_types)

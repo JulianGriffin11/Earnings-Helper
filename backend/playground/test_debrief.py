@@ -1,18 +1,17 @@
 """Smoke test for debrief agent. Run from backend/:
-    uv run python playground/test_debrief.py AMZN              # direct LLM from artifact
-    uv run python playground/test_debrief.py META --integration  # full report service pipeline
+uv run python playground/test_debrief.py AMZN              # direct LLM from artifact
+uv run python playground/test_debrief.py META --integration  # full report service pipeline
 """
 
 import argparse
-import asyncio
 import json
 from pathlib import Path
 
 from app.core.settings import get_settings
 from app.db.database import get_session_factory
 from app.services.debrief_agent import generate_debrief
-from app.services.ingest import SECClient
-from app.services.report_service import get_or_create_report
+from app.services.sec_client import SECClient
+from app.services.orchestration import ReportService
 
 ARTIFACTS_DIR = Path(__file__).resolve().parents[1] / "artifacts"
 
@@ -54,14 +53,15 @@ def run_direct(ticker: str) -> None:
     print_debrief({"debrief": debrief.model_dump(), "debrief_cached": False})
 
 
-async def run_integration(ticker: str) -> None:
+def run_integration(ticker: str) -> None:
     settings = get_settings()
     db = get_session_factory()()
 
     try:
-        async with SECClient(settings.sec_user_agent) as client:
+        with SECClient(settings.sec_user_agent) as client:
+            service = ReportService(db, client)
             print("=== Run 1 (expect YoY + debrief generation) ===\n")
-            report = await get_or_create_report(client, db, ticker)
+            report = service.get_or_create_report(ticker)
             if not report:
                 return
             print(
@@ -71,7 +71,7 @@ async def run_integration(ticker: str) -> None:
             print_debrief(report)
 
             print("=== Run 2 (expect cached YoY + cached debrief) ===\n")
-            report2 = await get_or_create_report(client, db, ticker)
+            report2 = service.get_or_create_report(ticker)
             if not report2:
                 return
             print(
@@ -95,7 +95,7 @@ def main() -> None:
     ticker = args.ticker.upper()
 
     if args.integration:
-        asyncio.run(run_integration(ticker))
+        run_integration(ticker)
     else:
         run_direct(ticker)
 

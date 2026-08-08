@@ -6,18 +6,14 @@ from sqlalchemy.orm import Session
 
 from app.models.report import HistoryItem, HistoryResponse, ReportResponse
 from app.routes.deps import get_db, get_sec_client
-from app.services.ingest import SECClient
-from app.services.report_service import (
-    get_or_create_report,
-    get_report_by_filing_date,
-    list_history,
-)
+from app.services.sec_client import SECClient
+from app.services.orchestration import ReportService
 
 router = APIRouter(tags=["reports"])
 
 
 @router.get("/report", response_model=ReportResponse)
-async def get_report(
+def get_report(
     ticker: str = Query(..., min_length=1),
     refresh: bool = False,
     filing_date: str | None = None,
@@ -26,13 +22,13 @@ async def get_report(
 ) -> ReportResponse:
     try:
         if filing_date:
-            result = get_report_by_filing_date(db, ticker, filing_date)
+            result = ReportService(db).get_report_by_filing_date(ticker, filing_date)
             if not result:
                 raise HTTPException(status_code=404, detail="Report not found")
             return ReportResponse(**result)
 
-        result = await get_or_create_report(
-            client, db, ticker, force_refresh=refresh
+        result = ReportService(db, client).get_or_create_report(
+            ticker, force_refresh=refresh
         )
         if not result:
             raise HTTPException(status_code=404, detail="Company not found")
@@ -52,7 +48,7 @@ def get_history(
     ticker: str = Query(..., min_length=1),
     db: Session = Depends(get_db),
 ) -> HistoryResponse:
-    items = list_history(db, ticker)
+    items = ReportService(db).list_history(ticker)
     if items is None:
         raise HTTPException(status_code=404, detail="Company not found")
     return HistoryResponse(

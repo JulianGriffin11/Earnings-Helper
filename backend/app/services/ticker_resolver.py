@@ -1,6 +1,6 @@
-"""Resolve ticker symbols and company names to SEC CIK."""
+"""Map ticker symbols and company names to SEC CIK."""
 
-from app.services.ingest import COMPANY_TICKERS_URL, SECClient
+from app.services.sec_client import COMPANY_TICKERS_URL, SECClient
 
 
 def entry_to_result(entry: dict) -> dict[str, str]:
@@ -11,13 +11,13 @@ def entry_to_result(entry: dict) -> dict[str, str]:
     }
 
 
-async def search(client: SECClient, query: str, *, limit: int = 10) -> list[dict[str, str]]:
+def search(client: SECClient, query: str, *, limit: int = 10) -> list[dict[str, str]]:
     """Return up to `limit` companies matching ticker or partial name."""
     cleaned = query.strip()
     if not cleaned:
         return []
 
-    tickers = await client.fetch_json(COMPANY_TICKERS_URL)
+    tickers = client.fetch_json(COMPANY_TICKERS_URL)
     results: list[dict[str, str]] = []
     seen_ciks: set[str] = set()
 
@@ -41,7 +41,7 @@ async def search(client: SECClient, query: str, *, limit: int = 10) -> list[dict
     return results[:limit]
 
 
-async def resolve(client: SECClient, query: str) -> dict | None:
+def resolve(client: SECClient, query: str) -> dict | None:
     """Look up a company by ticker or partial name.
 
     Returns {"ticker", "name", "cik"} or None if nothing matches.
@@ -51,7 +51,7 @@ async def resolve(client: SECClient, query: str) -> dict | None:
         print("No company found")
         return None
 
-    results = await search(client, cleaned, limit=1)
+    results = search(client, cleaned, limit=1)
     if not results:
         print("No company found")
         return None
