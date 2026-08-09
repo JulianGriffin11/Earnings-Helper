@@ -21,6 +21,10 @@ from app.services.sec_client import SECClient
 REVENUE_LABEL = "Revenue"
 COGS_TAGS = ["CostOfRevenue", "CostOfGoodsAndServicesSold"]
 DurationPreference = Literal["shortest", "longest"]
+# Allow fiscal period ends that drift slightly from calendar year-ago (e.g. NVDA).
+PRIOR_PERIOD_TOLERANCE_DAYS = 7
+MIN_PRIOR_GAP_DAYS = 330
+MAX_PRIOR_GAP_DAYS = 400
 
 
 def duration_days(fact: NormalizedFact) -> int | None:
@@ -65,6 +69,37 @@ def year_ago(end: str) -> str:
         return d.replace(year=d.year - 1, day=28).isoformat()
 
 
+def find_prior_period_end(
+    facts: list[NormalizedFact],
+    form: str,
+    current_end: str,
+    *,
+    prefer: DurationPreference,
+) -> str | None:
+    """Prior-year period end nearest to calendar year-ago of current_end."""
+    current = date.fromisoformat(current_end)
+    target = date.fromisoformat(year_ago(current_end))
+    candidates: list[tuple[int, str]] = []
+
+    for end in {f.end for f in facts if f.form == form}:
+        if end >= current_end:
+            continue
+        prior = date.fromisoformat(end)
+        gap_days = (current - prior).days
+        if gap_days < MIN_PRIOR_GAP_DAYS or gap_days > MAX_PRIOR_GAP_DAYS:
+            continue
+        distance = abs((prior - target).days)
+        if distance > PRIOR_PERIOD_TOLERANCE_DAYS:
+            continue
+        if fact_at_end(facts, form, end, prefer=prefer) is None:
+            continue
+        candidates.append((distance, end))
+
+    if not candidates:
+        return None
+    return min(candidates)[1]
+
+
 def yoy(current: float, prior: float) -> dict[str, float | None]:
     dollar_change = current - prior
     pct = None if prior == 0 else (current / prior - 1.0) * 100.0
@@ -100,8 +135,8 @@ def pick_period_ends(
     for end in sorted({f.end for f in form_facts}, reverse=True):
         if fact_at_end(facts, form, end, prefer=prefer) is None:
             continue
-        prior_end = year_ago(end)
-        if fact_at_end(facts, form, prior_end, prefer=prefer) is None:
+        prior_end = find_prior_period_end(facts, form, end, prefer=prefer)
+        if prior_end is None:
             continue
         return end, prior_end
 
