@@ -228,7 +228,7 @@ Writes one JSON file per run to `backend/artifacts/{TICKER}_{date}.json` for man
 - [x] Annual YoY matching
 - [x] Playground smoke test (`playground/test_yoy.py`)
 - [x] Artifact JSON per run for spot-checks (`artifacts/`)
-- [ ] Edge cases: missing tags, zero prior, restatements (deferred)
+- [x] Edge cases: zero prior, restatements, missing tags via `metrics.yaml` fallbacks (see [Known limitations](#known-limitations))
 
 ---
 
@@ -316,7 +316,7 @@ Validate cache behavior:
 
 ```bash
 cd backend
-uv run python playground/test_orchestration.py
+uv run python playground/test_report_service.py AMZN
 ```
 
 First run prints `cached: false`; second run prints `cached: true`.
@@ -326,7 +326,7 @@ First run prints `cached: false`; second run prints `cached: true`.
 - [x] SQLAlchemy models for Company, Report, Debrief
 - [x] Alembic migration applied
 - [x] Report service with cache hit/miss logic
-- [x] Playground smoke test (`playground/test_orchestration.py`)
+- [x] Playground smoke test (`playground/test_report_service.py`)
 
 ---
 
@@ -509,14 +509,16 @@ First run may take ~10–30s (SEC + OpenAI). Repeat lookup should be much faster
 #### 6.3 Run the test suite
 
 ```bash
-cd backend && pytest -v
+cd backend && uv run pytest -v
+# Fast unit tests only (no SEC network):
+cd backend && uv run pytest -v -m "not integration"
 ```
 
 **Phase 6 checklist:**
-- [ ] 5+ large-cap tickers work without manual tag fixes
-- [ ] Cached reports return instantly
-- [ ] All tests pass
-- [ ] Manual spot-check against SEC filings
+- [x] 5+ large-cap tickers work without manual tag fixes (validated: AAPL, MSFT, META, AMZN, NVDA, GOOGL, WMT, TSLA)
+- [x] Cached reports return instantly
+- [x] All tests pass
+- [x] Manual spot-check against SEC filings
 
 ---
 
@@ -554,10 +556,13 @@ Earnings_Helper/
 │   ├── config/
 │   │   └── metrics.yaml
 │   ├── playground/
-│   │   ├── test_ingest.py
 │   │   ├── test_yoy.py
-│   │   ├── test_orchestration.py
+│   │   ├── test_yoy_batch.py
+│   │   ├── test_report_service.py
 │   │   └── test_debrief.py
+│   ├── tests/
+│   │   ├── test_yoy_calculator.py
+│   │   └── test_yoy_tickers.py
 │   ├── artifacts/          # gitignored; one JSON per YoY run for spot-checks
 │   ├── pyproject.toml
 │   └── .env.example
@@ -643,18 +648,59 @@ Open http://localhost:5173, search for a ticker, and view the YoY report + debri
 | LLM latency (2–5s) | Progressive loading UI; cache debriefs in Postgres |
 | LLM cost | Cache by filing date; only re-call on `refresh=true` |
 | Companies use different XBRL tags | Fallback tag list in `metrics.yaml` |
+| OpEx reported as SG&A or other labels | `SellingGeneralAndAdministrativeExpense` fallback; add tags to `metrics.yaml` as needed |
 | SEC rate limiting | In-memory cache; respect 10 req/s |
 | Fiscal calendars differ | Match on `end` date, not calendar assumptions |
 
 ---
 
+## Known Limitations
+
+Some filers do not publish a single **Operating Expenses** XBRL tag. They may report **General and Administrative**, **Selling, General & Administrative**, or component expense lines instead. The calculator tries fallbacks in [`metrics.yaml`](backend/config/metrics.yaml), but SG&A is not always equivalent to total operating expenses — numbers may differ from the filing's presentation. When a new company fails the OpEx row, add the tag they use to the fallbacks list (no code change required).
+
+---
+
 ## Success Criteria
 
-- [ ] Enter `AMZN` → YoY tables + structured LLM debrief in under ~10s (first run), ~1s (cached)
-- [ ] YoY numbers match latest 10-Q/10-K (manual spot-check)
-- [ ] Debrief cites only numbers from the YoY report
-- [ ] Past reports visible in history for same ticker
-- [ ] Works for 5+ large-cap tickers without manual tag fixes
+- [x] Enter `AMZN` → YoY tables + structured LLM debrief in under ~10s (first run), ~1s (cached)
+- [x] YoY numbers match latest 10-Q/10-K (manual spot-check)
+- [x] Debrief cites only numbers from the YoY report
+- [x] Past reports visible in history for same ticker
+- [x] Works for 5+ large-cap tickers without manual tag fixes
+
+---
+
+## Deployment
+
+The app is ready to deploy as two services plus the existing Supabase database.
+
+**Backend (FastAPI)** — [Railway](https://railway.app), [Render](https://render.com), or [Fly.io](https://fly.io):
+
+```bash
+cd backend
+uv sync
+alembic upgrade head   # use direct Postgres URL (port 5432) if pooler fails
+uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Set env vars: `SEC_USER_AGENT`, `DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL` (optional).
+
+Update CORS in [`backend/app/main.py`](backend/app/main.py) — add your production frontend origin alongside `http://localhost:5173`.
+
+**Frontend (Vite static build)** — [Vercel](https://vercel.com), [Netlify](https://netlify.com), or [Cloudflare Pages](https://pages.cloudflare.com):
+
+```bash
+cd frontend
+# Set VITE_API_BASE_URL to your deployed API origin (see .env.production)
+pnpm run build
+# Deploy the dist/ folder
+```
+
+**Checklist before going live:**
+1. Supabase migrations applied on production DB
+2. `VITE_API_BASE_URL` points at the deployed API
+3. CORS allows the frontend origin
+4. Secrets (`OPENAI_API_KEY`, `DATABASE_URL`) only on the backend — never in `VITE_*` vars
 
 ---
 

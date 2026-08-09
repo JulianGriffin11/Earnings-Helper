@@ -7,12 +7,15 @@ metrics:
     fallbacks:
       - RevenueFromContractWithCustomerExcludingAssessedTax
       - SalesRevenueNet
+      - RevenuesNetOfInterestExpense
 
   - label: Operating Expenses
     primary: OperatingExpenses
     fallbacks:
       - CostsAndExpenses
       - OtherCostAndExpenseOperating
+      - SellingGeneralAndAdministrativeExpense
+      - NoninterestExpense
 
   - label: Gross Profit
     primary: GrossProfit

@@ -1,6 +1,11 @@
 from functools import lru_cache
+from pathlib import Path
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Langfuse (and other libs) read os.environ directly — pydantic alone does not export .env.
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
 class Settings(BaseSettings):

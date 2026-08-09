@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 from app.core.settings import get_settings
+from langfuse import get_client
 from app.db.database import get_session_factory
 from app.services.debrief_agent import generate_debrief
 from app.services.sec_client import SECClient
@@ -110,6 +111,9 @@ def main() -> None:
         run_integration(ticker)
     else:
         run_direct(ticker)
+
+    get_client().flush()
+    print("Langfuse traces flushed.")
 
 
 if __name__ == "__main__":

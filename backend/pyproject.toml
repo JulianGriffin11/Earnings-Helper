@@ -15,6 +15,7 @@ dependencies = [
     "alembic>=1.14",
     "psycopg2-binary>=2.9",
     "openai>=1.0",
+    "langfuse>=4.14.3",
 ]
 
 [project.optional-dependencies]
@@ -35,3 +36,9 @@ exclude = ["playground*"]
 dev = [
     "pytest>=9.1.1",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: live SEC API tests (deselect with '-m \"not integration\"')",
+]
+testpaths = ["tests"]

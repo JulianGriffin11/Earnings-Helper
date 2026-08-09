@@ -5,10 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from openai import OpenAI
-
 from app.core.settings import Settings, get_settings
 from app.models.debrief import EarningsDebrief
+from langfuse.openai import OpenAI
 
 SYSTEM_PROMPT = """You are an earnings analyst. Interpret the provided YoY financial data.
 
@@ -41,13 +40,15 @@ def generate_debrief(
     """Sync OpenAI call — returns structured debrief from YoY JSON."""
     settings = settings or get_settings()
     client = OpenAI(api_key=settings.openai_api_key)
-    completion = client.beta.chat.completions.parse(
+    completion = client.chat.completions.parse(
         model=settings.openai_model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": build_user_message(yoy_report)},
         ],
         response_format=EarningsDebrief,
+        name="earnings-debrief",
+        metadata={"ticker": yoy_report.get("ticker")},
     )
     parsed = completion.choices[0].message.parsed
     if parsed is None:
