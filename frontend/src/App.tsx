@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
-import { ExternalLinkIcon } from 'lucide-react'
+import { AlertCircleIcon, ExternalLinkIcon } from 'lucide-react'
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import AppHeader from './components/AppHeader'
 import DebriefPanel from './components/DebriefPanel'
 import LandingHero from './components/LandingHero'
@@ -41,7 +42,6 @@ export default function App() {
         setReport(data)
         setLoadState('success')
       } catch (err) {
-        setReport(null)
         setError(err instanceof Error ? err.message : 'Failed to load report')
         setLoadState('error')
       }
@@ -59,8 +59,8 @@ export default function App() {
   }
 
   const isLoading = loadState === 'loading'
-  const hasReport = loadState === 'success' && report
-  const showLanding = loadState === 'idle' || (loadState === 'error' && !report)
+  const hasReport = !isLoading && report
+  const showLanding = !report && (loadState === 'idle' || loadState === 'error')
   const showProgress = isLoading || (loadState === 'error' && progressSteps.length > 0)
 
   return (
@@ -87,6 +87,14 @@ export default function App() {
             )}
 
             {isLoading && <ReportLoadingSkeleton />}
+
+            {loadState === 'error' && error && report && (
+              <Alert variant="destructive" className="mb-6">
+                <AlertCircleIcon />
+                <AlertTitle>Failed to load report</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
 
             {hasReport && (
               <div className="flex flex-col gap-6">

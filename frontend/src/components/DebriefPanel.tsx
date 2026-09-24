@@ -91,8 +91,13 @@ export default function DebriefPanel({ debrief }: DebriefPanelProps) {
   return (
     <Card>
       <CardHeader className="border-b">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <CardTitle>Earnings Debrief</CardTitle>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-1">
+            <CardTitle>Earnings Debrief</CardTitle>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {debrief.headline}
+            </p>
+          </div>
           <span
             className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold tracking-wide ${assessmentStyles[debrief.overall_assessment]}`}
           >

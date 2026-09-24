@@ -1,6 +1,4 @@
-"""API response models for reports, search, and history."""
-
-from datetime import datetime
+"""API response models for reports and search."""
 
 from pydantic import BaseModel
 
@@ -42,15 +40,3 @@ class SearchResult(BaseModel):
 
 class SearchResponse(BaseModel):
     results: list[SearchResult]
-
-
-class HistoryItem(BaseModel):
-    filing_date: str
-    period_end: str | None
-    created_at: datetime
-    report_id: int
-
-
-class HistoryResponse(BaseModel):
-    ticker: str
-    items: list[HistoryItem]

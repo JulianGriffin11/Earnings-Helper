@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: earnings-helper
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    preDeployCommand: cd /app/backend && /app/backend/.venv/bin/alembic upgrade head
+    envVars:
+      - key: SEC_USER_AGENT
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
+      - key: LANGFUSE_BASE_URL
+        sync: false

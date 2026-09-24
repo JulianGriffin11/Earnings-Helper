@@ -1,5 +1,4 @@
 import { env } from './env'
-import type { HistoryResponse } from './types/history'
 import type { Report } from './types/report'
 import type { SearchResponse } from './types/search'
 
@@ -42,16 +41,6 @@ export function searchCompanies(query: string): Promise<SearchResponse> {
   return apiFetch<SearchResponse>(`/api/search?${params}`)
 }
 
-export function fetchReport(
-  ticker: string,
-  options?: { refresh?: boolean; filingDate?: string },
-): Promise<Report> {
-  const params = new URLSearchParams({ ticker })
-  if (options?.refresh) params.set('refresh', 'true')
-  if (options?.filingDate) params.set('filing_date', options.filingDate)
-  return apiFetch<Report>(`/api/report?${params}`)
-}
-
 function parseSseChunk(chunk: string): { event: string; data: string } | null {
   let event = 'message'
   let data = ''
@@ -65,12 +54,11 @@ function parseSseChunk(chunk: string): { event: string; data: string } | null {
 
 export function fetchReportStream(
   ticker: string,
-  options: { refresh?: boolean; filingDate?: string } | undefined,
+  options: { refresh?: boolean } | undefined,
   onProgress: (message: string) => void,
 ): Promise<Report> {
   const params = new URLSearchParams({ ticker })
   if (options?.refresh) params.set('refresh', 'true')
-  if (options?.filingDate) params.set('filing_date', options.filingDate)
 
   const url = buildApiUrl(`/api/report/stream?${params}`)
 
@@ -127,9 +115,4 @@ export function fetchReportStream(
 
     throw new Error('Report stream ended before completion')
   })
-}
-
-export function fetchHistory(ticker: string): Promise<HistoryResponse> {
-  const params = new URLSearchParams({ ticker })
-  return apiFetch<HistoryResponse>(`/api/history?${params}`)
 }

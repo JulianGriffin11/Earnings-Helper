@@ -1,4 +1,4 @@
-"""Report and history routes."""
+"""Report routes."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.models.report import HistoryItem, HistoryResponse, ReportResponse
+from app.models.report import ReportResponse
 from app.core.settings import get_settings
 from app.db.database import get_session_factory
 from app.routes.deps import get_db, get_sec_client
@@ -31,7 +31,6 @@ def stream_report_events(
     *,
     ticker: str,
     refresh: bool,
-    filing_date: str | None,
 ) -> Iterator[str]:
     settings = get_settings()
     event_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
@@ -42,23 +41,14 @@ def stream_report_events(
     def run_pipeline() -> None:
         db = get_session_factory()()
         try:
-            if filing_date:
-                service = ReportService(db)
-                result = service.get_report_by_filing_date(
-                    ticker, filing_date, on_progress=emit
+            with SECClient(settings.sec_user_agent) as client:
+                service = ReportService(db, client)
+                result = service.get_or_create_report(
+                    ticker, force_refresh=refresh, on_progress=emit
                 )
-                if not result:
-                    event_queue.put(("failure", "Report not found"))
-                    return
-            else:
-                with SECClient(settings.sec_user_agent) as client:
-                    service = ReportService(db, client)
-                    result = service.get_or_create_report(
-                        ticker, force_refresh=refresh, on_progress=emit
-                    )
-                if not result:
-                    event_queue.put(("failure", "Company not found"))
-                    return
+            if not result:
+                event_queue.put(("failure", "Company not found"))
+                return
 
             report = ReportResponse(**result).model_dump(mode="json")
             event_queue.put(("complete", report))
@@ -93,17 +83,10 @@ def stream_report_events(
 def get_report(
     ticker: str = Query(..., min_length=1),
     refresh: bool = False,
-    filing_date: str | None = None,
     db: Session = Depends(get_db),
     client: SECClient = Depends(get_sec_client),
 ) -> ReportResponse:
     try:
-        if filing_date:
-            result = ReportService(db).get_report_by_filing_date(ticker, filing_date)
-            if not result:
-                raise HTTPException(status_code=404, detail="Report not found")
-            return ReportResponse(**result)
-
         result = ReportService(db, client).get_or_create_report(
             ticker, force_refresh=refresh
         )
@@ -124,13 +107,11 @@ def get_report(
 def get_report_stream(
     ticker: str = Query(..., min_length=1),
     refresh: bool = False,
-    filing_date: str | None = None,
 ) -> StreamingResponse:
     return StreamingResponse(
         stream_report_events(
             ticker=ticker,
             refresh=refresh,
-            filing_date=filing_date,
         ),
         media_type="text/event-stream",
         headers={
@@ -138,18 +119,4 @@ def get_report_stream(
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
-    )
-
-
-@router.get("/history", response_model=HistoryResponse)
-def get_history(
-    ticker: str = Query(..., min_length=1),
-    db: Session = Depends(get_db),
-) -> HistoryResponse:
-    items = ReportService(db).list_history(ticker)
-    if items is None:
-        raise HTTPException(status_code=404, detail="Company not found")
-    return HistoryResponse(
-        ticker=ticker.upper(),
-        items=[HistoryItem(**item) for item in items],
     )

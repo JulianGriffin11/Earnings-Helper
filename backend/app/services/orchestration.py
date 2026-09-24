@@ -134,65 +134,6 @@ class ReportService:
         emit("Report ready")
         return result
 
-    def list_history(self, ticker: str) -> list[dict[str, Any]] | None:
-        """Past quarterly report snapshots for a ticker, newest first."""
-        company = self.get_company_by_ticker(ticker)
-        if not company:
-            return None
-
-        rows = (
-            self.db.query(Report)
-            .filter_by(company_id=company.id, period_type="quarterly")
-            .order_by(Report.created_at.desc())
-            .all()
-        )
-        return [
-            {
-                "filing_date": row.filing_date,
-                "period_end": row.period_end.isoformat() if row.period_end else None,
-                "created_at": row.created_at,
-                "report_id": row.id,
-            }
-            for row in rows
-        ]
-
-    def get_report_by_filing_date(
-        self,
-        ticker: str,
-        filing_date: str,
-        *,
-        on_progress: ProgressCallback | None = None,
-    ) -> dict[str, Any] | None:
-        """Load a cached YoY snapshot (+ debrief if present) from Postgres only."""
-
-        def emit(message: str) -> None:
-            if on_progress:
-                on_progress(message)
-
-        emit(f"Loading cached report for {ticker.upper()}...")
-        company = self.get_company_by_ticker(ticker)
-        if not company:
-            return None
-
-        reports = self.find_cached_reports(company.id, filing_date)
-        if not reports:
-            return None
-
-        emit("Using cached YoY data")
-        payload = assemble_payload(company, reports, filing_date, cached=True)
-        existing = self.find_debrief(reports["quarterly"].id)
-        if existing:
-            emit("Using cached debrief")
-            result = attach_debrief(payload, existing.debrief_json, debrief_cached=True)
-            emit("Report ready")
-            return result
-
-        emit("Report ready")
-        return {**payload, "debrief": None, "debrief_cached": False}
-
-    def get_company_by_ticker(self, ticker: str) -> Company | None:
-        return self.db.query(Company).filter_by(ticker=ticker.upper()).one_or_none()
-
     def upsert_company(self, company: dict[str, str]) -> Company:
         row = self.db.query(Company).filter_by(cik=company["cik"]).one_or_none()
         if row is None:

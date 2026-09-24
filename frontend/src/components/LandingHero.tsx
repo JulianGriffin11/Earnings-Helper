@@ -20,8 +20,8 @@ export default function LandingHero({
         <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">
           Earnings Helper
         </h1>
-        <p className="mt-3 text-base text-muted-foreground md:text-lg">
-          Earnings debrief validated from SEC filings
+        <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-muted-foreground md:text-lg">
+          Year-over-year earnings from SEC filings, with a short debrief of what changed.
         </p>
       </div>
 

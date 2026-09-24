@@ -39,10 +39,13 @@ export default function ReportSummary({
             Refresh
           </Button>
         </CardAction>
-        <div className="col-span-2 pt-1">
+        <div className="col-span-2 flex flex-wrap items-center gap-x-3 gap-y-1 pt-1">
           <span className="text-sm text-muted-foreground">
             Filing date: {report.filing_date}
           </span>
+          {report.cached && (
+            <span className="text-sm text-muted-foreground">Cached result</span>
+          )}
         </div>
       </CardHeader>
     </Card>

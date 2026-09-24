@@ -28,11 +28,6 @@ function readApiBaseUrl(): string {
   const raw = import.meta.env.VITE_API_BASE_URL
 
   if (raw === undefined || raw === '') {
-    if (import.meta.env.PROD) {
-      throw new Error(
-        'VITE_API_BASE_URL is required in production. Set it to your deployed FastAPI origin (e.g. https://api.example.com).',
-      )
-    }
     return ''
   }
 
