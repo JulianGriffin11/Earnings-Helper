@@ -1,37 +1,53 @@
 # Earnings Helper
 
-Year-over-year income-statement analysis for public companies. Search a ticker, pull SEC XBRL data, compute the changes in Python, and show a short LLM debrief of what moved.
+Year-over-year income-statement analysis for public companies. Search a ticker, pull SEC XBRL data, compute the changes in Python, and show a short debrief of what moved.
 
-The app is two screens: a search landing page, and a report with quarterly and annual tables plus the debrief. Postgres caches a report for the latest filing so repeat lookups stay fast.
+## Why I Built This 💡
 
-## Architecture
+I wanted a faster way to read an earnings report. Instead of hunting through a filing for which lines changed, I wanted the year-over-year numbers calculated first, then a short explanation of what those changes mean.
 
-```mermaid
-flowchart LR
-    User["User enters AMZN"]
-    Frontend["React UI"]
-    API["FastAPI"]
-    SEC["SEC XBRL API"]
-    Calc["YoY calculator"]
-    DB["Postgres"]
-    LLM["LLM debrief"]
-    Report["Report + debrief"]
+## How It Works
 
-    User --> Frontend --> API
-    API --> SEC --> Calc
-    Calc --> DB
-    Calc --> LLM
-    LLM --> DB
-    DB --> Report --> Frontend
+```text
+        Ticker search
+              ↓
+        SEC XBRL facts
+              ↓
+       Python YoY math
+              ↓
+          PostgreSQL
+              ↓
+         LLM debrief
+              ↓
+       Report in the UI
 ```
 
-| Decision | Choice | Why |
-|---|---|---|
-| Data source | SEC XBRL API | Free, structured JSON |
-| YoY math | Deterministic Python | Auditable; the model never does arithmetic |
-| LLM | Debrief only | Interprets numbers already computed |
-| Database | Postgres | Cache reports and debriefs |
-| Deploy | One Render web service | FastAPI serves the built UI and `/api` |
+Enter a ticker. The app resolves the company, pulls structured facts from the SEC, and computes quarterly and annual year-over-year changes in Python. Postgres caches the report for the latest filing. The model writes a debrief from those numbers. One Render web service serves the React UI and the API together.
+
+## Tech Stack 🛠️
+
+| Technology | Purpose |
+| --- | --- |
+| React / Vite | Search page and report UI |
+| FastAPI | API, and the built UI in production |
+| Python | SEC fetch, YoY calculation, and orchestration |
+| PostgreSQL | Cached reports and debriefs |
+| SQLAlchemy / Alembic | Data access and migrations |
+| OpenAI API | Earnings debrief |
+| Render | One web service for the UI and API |
+
+## AI Pipeline 🤖
+
+Python and SQL handle fetching, period selection, storage, and the arithmetic. The LLM is used only to interpret numbers the code already computed.
+
+1. Compute the quarterly and annual year-over-year rows
+2. Write a debrief that explains what moved
+
+Model output is returned as structured JSON so the application can store it and render the debrief in code. The model does not calculate percentages.
+
+## Database 🗄️
+
+PostgreSQL stores the company, the quarterly and annual report, and the debrief. A repeat lookup for the latest filing is served from cache when the stored period is still current.
 
 ## Run locally
 
@@ -44,66 +60,35 @@ uv sync
 uv run alembic upgrade head
 
 # from the repo root
-./dev.sh
+./scripts/dev.sh
 ```
 
-`dev.sh` starts the API on port 8000 and Vite on port 5173. Leave `VITE_API_BASE_URL` empty so the dev server proxies `/api`.
+`scripts/dev.sh` starts the API on port 8000 and Vite on port 5173. Leave `VITE_API_BASE_URL` empty so the dev server proxies `/api`.
 
 Open http://localhost:5173 and search for a ticker such as AMZN.
 
-Tests:
-
-```bash
-cd backend && uv run pytest -v -m "not integration"
-```
-
-## Environment
-
-Backend (`backend/.env`):
-
 | Variable | Required | Description |
-|---|---|---|
+| --- | --- | --- |
 | `SEC_USER_AGENT` | yes | Contact string for SEC requests |
 | `DATABASE_URL` | yes | Postgres URL. Use the direct connection (port 5432) for migrations |
 | `OPENAI_API_KEY` | yes | Debrief generation |
 | `OPENAI_MODEL` | no | Defaults to `gpt-4o-mini` |
-| `CORS_ORIGINS` | no | Defaults to `http://localhost:5173`. Not needed when the UI is same-origin |
 | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | no | Observability |
 
-Frontend: `VITE_API_BASE_URL` stays empty for local dev and for the single Render service. Set it only if the API is hosted on a different origin.
+Deploy with the Blueprint in [`render.yaml`](render.yaml). Render runs [`scripts/render-build.sh`](scripts/render-build.sh), applies migrations, then starts the API with [`scripts/start.sh`](scripts/start.sh). FastAPI serves the built UI and `/api` on the same URL. Set `SEC_USER_AGENT`, `DATABASE_URL`, and `OPENAI_API_KEY` on the service. Health check: `GET /health`.
 
-## Deploy on Render
+## What I Learned 📚
 
-One web service, defined in [`render.yaml`](render.yaml) and [`Dockerfile`](Dockerfile).
+Building this was less about the model call and more about the pipeline around it. SEC filings do not all use the same tags, and the year-over-year math has to stay in code so the debrief is explaining numbers that can be checked.
 
-1. Create a Blueprint from this repo, or a Docker web service with root directory `.`.
-2. Set `SEC_USER_AGENT`, `DATABASE_URL`, and `OPENAI_API_KEY`. Add `OPENAI_MODEL` and Langfuse keys if you use them.
-3. Render runs `alembic upgrade head` before each deploy, then starts uvicorn. The image build compiles `frontend/dist`, and FastAPI serves it next to `/api`.
-4. Health check: `GET /health`.
+Predictable work belongs in Python. Fetching, period selection, arithmetic, and caching stay deterministic. The model is reserved for the written debrief.
 
-`VITE_API_BASE_URL` and `CORS_ORIGINS` are not required for this setup.
+## Future Improvements 🚀
 
-## Project layout
+- Cover filers that do not publish a single Operating Expenses XBRL tag. Fallbacks live in [`backend/config/metrics.yaml`](backend/config/metrics.yaml), and SG&A is not always the same as total operating expenses.
+- Show when a cached report is stale relative to a new filing
+- Add clearer empty states when a metric tag is missing
 
-```
-backend/     FastAPI app, Alembic, YoY pipeline
-frontend/    Vite React app
-scripts/     render-build.sh and start.sh
-Dockerfile   Node build stage + Python runtime
-render.yaml  single web service
-dev.sh       local API + Vite
-```
+## Project Status ✅
 
-API:
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/search?q=amazon` | Ticker and name autocomplete |
-| `GET /api/report?ticker=AMZN` | YoY report and debrief, from cache when fresh |
-| `GET /api/report?ticker=AMZN&refresh=true` | Recompute and write a new debrief |
-| `GET /api/report/stream?ticker=AMZN` | Same pipeline as server-sent progress events |
-| `GET /health` | Process health |
-
-## Known limitations
-
-Some filers do not publish a single Operating Expenses XBRL tag. The calculator tries fallbacks in [`backend/config/metrics.yaml`](backend/config/metrics.yaml), but SG&A is not always the same as total operating expenses. When a company fails that row, add the tag they use to the fallback list.
+The report pipeline is built: search, SEC facts, year-over-year tables, a cached Postgres report, and an LLM debrief. It is set up to deploy as one Render web service. Future work would extend the metric coverage, not split the app into separate frontend and backend deploys.

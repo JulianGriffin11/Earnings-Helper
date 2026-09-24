@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
+# Start the API and Vite dev server locally.
+# ./scripts/dev.sh
 set -e
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 free_port() {
   local port=$1
@@ -25,6 +27,3 @@ free_port 5173
 (cd "$ROOT/frontend" && pnpm run dev) &
 
 wait
-
-
-# To run: ./dev.sh

@@ -1,12 +1,14 @@
 services:
   - type: web
     name: earnings-helper
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
+    runtime: python
+    buildCommand: ./scripts/render-build.sh
+    startCommand: ./scripts/start.sh
+    preDeployCommand: cd backend && .venv/bin/alembic upgrade head
     healthCheckPath: /health
-    preDeployCommand: cd /app/backend && /app/backend/.venv/bin/alembic upgrade head
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
       - key: SEC_USER_AGENT
         sync: false
       - key: DATABASE_URL
