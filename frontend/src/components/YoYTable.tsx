@@ -1,4 +1,4 @@
-import { formatCurrency, formatPct } from '@/lib/format'
+import { formatMoney, formatPct } from '@/lib/format'
 import type { YoYSection } from '@/lib/types'
 
 import {
@@ -20,9 +20,11 @@ import {
 interface YoYTableProps {
   title: string
   section: YoYSection
+  compact?: boolean
 }
 
-export default function YoYTable({ title, section }: YoYTableProps) {
+export default function YoYTable({ title, section, compact = false }: YoYTableProps) {
+  const exact = !compact
   if (!section.period_end) {
     return (
       <Card>
@@ -60,13 +62,13 @@ export default function YoYTable({ title, section }: YoYTableProps) {
               <TableRow key={metric.label}>
                 <TableCell className="font-medium">{metric.label}</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {formatCurrency(metric.current)}
+                  {formatMoney(metric.current, exact)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {formatCurrency(metric.prior)}
+                  {formatMoney(metric.prior, exact)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {formatCurrency(metric.dollar_change)}
+                  {formatMoney(metric.dollar_change, exact)}
                 </TableCell>
                 <TableCell
                   className={`text-right font-medium tabular-nums ${

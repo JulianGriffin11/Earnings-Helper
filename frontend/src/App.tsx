@@ -4,12 +4,14 @@ import { AlertCircleIcon, ExternalLinkIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import AppHeader from './components/AppHeader'
 import DebriefPanel from './components/DebriefPanel'
+import KpiGrid from './components/KpiGrid'
 import LandingHero from './components/LandingHero'
 import ReportLoadingSkeleton from './components/ReportLoadingSkeleton'
 import ReportProgressLog from './components/ReportProgressLog'
 import ReportSummary from './components/ReportSummary'
 import YoYTable from './components/YoYTable'
 import { fetchReportStream } from './lib/api'
+import { readRecent, rememberRecent, type RecentTicker } from './lib/recent'
 import { secEdgarUrl } from './lib/sec'
 import type { ProgressStep, Report } from './lib/types'
 
@@ -27,6 +29,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [report, setReport] = useState<Report | null>(null)
   const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([])
+  const [exactFigures, setExactFigures] = useState(false)
+  const [recent, setRecent] = useState<RecentTicker[]>(readRecent)
 
   const loadReport = useCallback(
     async (ticker: string, options?: { refresh?: boolean }) => {
@@ -40,6 +44,7 @@ export default function App() {
         })
         setProgressSteps((prev) => prev.map((step) => ({ ...step, status: 'done' })))
         setReport(data)
+        setRecent(rememberRecent(data.ticker, data.company))
         setLoadState('success')
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load report')
@@ -61,7 +66,8 @@ export default function App() {
   const isLoading = loadState === 'loading'
   const hasReport = !isLoading && report
   const showLanding = !report && (loadState === 'idle' || loadState === 'error')
-  const showProgress = isLoading || (loadState === 'error' && progressSteps.length > 0)
+  const progressMode = isLoading ? 'loading' : loadState === 'error' ? 'error' : 'success'
+  const showProgress = progressSteps.length > 0 && !showLanding
 
   return (
     <div className="flex min-h-svh flex-col">
@@ -70,6 +76,8 @@ export default function App() {
           onSelect={handleSelect}
           disabled={isLoading}
           error={loadState === 'error' ? error : null}
+          recent={recent}
+          progressSteps={progressSteps}
         />
       ) : (
         <>
@@ -77,17 +85,10 @@ export default function App() {
             onSelect={handleSelect}
             disabled={isLoading}
             activeTicker={report?.ticker ?? null}
+            recent={recent}
           />
 
           <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 lg:px-6">
-            {showProgress && (
-              <div className="mb-6">
-                <ReportProgressLog steps={progressSteps} />
-              </div>
-            )}
-
-            {isLoading && <ReportLoadingSkeleton />}
-
             {loadState === 'error' && error && report && (
               <Alert variant="destructive" className="mb-6">
                 <AlertCircleIcon />
@@ -95,6 +96,14 @@ export default function App() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
+
+            {showProgress && (
+              <div className="mb-6">
+                <ReportProgressLog steps={progressSteps} mode={progressMode} />
+              </div>
+            )}
+
+            {isLoading && <ReportLoadingSkeleton />}
 
             {hasReport && (
               <div className="flex flex-col gap-6">
@@ -104,8 +113,22 @@ export default function App() {
                   refreshDisabled={isLoading}
                 />
 
-                <YoYTable title="Quarterly YoY" section={report.quarterly} />
-                <YoYTable title="Annual YoY" section={report.annual} />
+                <KpiGrid
+                  section={report.quarterly}
+                  exact={exactFigures}
+                  onExactChange={setExactFigures}
+                />
+
+                <YoYTable
+                  title="Quarterly YoY"
+                  section={report.quarterly}
+                  compact={false}
+                />
+                <YoYTable
+                  title="Annual YoY"
+                  section={report.annual}
+                  compact={false}
+                />
                 <DebriefPanel debrief={report.debrief} />
 
                 <footer className="border-t pt-4">

@@ -1,18 +1,27 @@
 import { AlertCircleIcon } from 'lucide-react'
 
-import CompanySearch from './CompanySearch'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import type { RecentTicker } from '@/lib/recent'
+import type { ProgressStep } from '@/lib/types'
+
+import CompanySearch from './CompanySearch'
+import RecentTickers from './RecentTickers'
+import ReportProgressLog from './ReportProgressLog'
 
 interface LandingHeroProps {
   onSelect: (ticker: string) => void
   disabled?: boolean
   error?: string | null
+  recent: RecentTicker[]
+  progressSteps?: ProgressStep[]
 }
 
 export default function LandingHero({
   onSelect,
   disabled,
   error,
+  recent,
+  progressSteps = [],
 }: LandingHeroProps) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-4 pb-24 pt-16">
@@ -32,6 +41,12 @@ export default function LandingHero({
         className="w-full"
       />
 
+      {recent.length > 0 && (
+        <div className="mt-6 w-full max-w-2xl">
+          <RecentTickers items={recent} onSelect={onSelect} disabled={disabled} />
+        </div>
+      )}
+
       {error && (
         <Alert variant="destructive" className="mt-6 w-full max-w-2xl">
           <AlertCircleIcon />
@@ -40,7 +55,13 @@ export default function LandingHero({
         </Alert>
       )}
 
-      {!error && (
+      {error && progressSteps.length > 0 && (
+        <div className="mt-4 w-full max-w-2xl">
+          <ReportProgressLog steps={progressSteps} mode="error" />
+        </div>
+      )}
+
+      {!error && recent.length === 0 && (
         <p className="mt-6 text-sm text-muted-foreground">
           Try AMZN, META, or AAPL
         </p>
