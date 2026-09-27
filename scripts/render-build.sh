@@ -10,8 +10,11 @@ if ! command -v uv >/dev/null 2>&1; then
   export PATH="${HOME}/.local/bin:${PATH}"
 fi
 
-corepack enable
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+mkdir -p "${HOME}/.local/bin"
+corepack enable --install-directory "${HOME}/.local/bin"
 corepack prepare pnpm@10.14.0 --activate
+export PATH="${HOME}/.local/bin:${PATH}"
 
 pnpm install --frozen-lockfile
 pnpm --filter frontend build
