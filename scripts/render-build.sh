@@ -5,10 +5,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-if ! command -v uv >/dev/null 2>&1; then
+if [[ ! -x "${HOME}/.local/bin/uv" ]]; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
-  export PATH="${HOME}/.local/bin:${PATH}"
 fi
+export PATH="${HOME}/.local/bin:${PATH}"
 
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 mkdir -p "${HOME}/.local/bin"
