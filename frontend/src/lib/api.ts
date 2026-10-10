@@ -36,6 +36,10 @@ async function apiFetch<T>(path: string): Promise<T> {
   return response.json() as Promise<T>
 }
 
+export function exportWorkbookUrl(ticker: string): string {
+  return buildApiUrl(`/api/reports/${encodeURIComponent(ticker)}/export.xlsx`)
+}
+
 export function searchCompanies(query: string): Promise<SearchResponse> {
   const params = new URLSearchParams({ q: query })
   return apiFetch<SearchResponse>(`/api/search?${params}`)

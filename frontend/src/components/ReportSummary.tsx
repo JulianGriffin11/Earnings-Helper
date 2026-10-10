@@ -1,6 +1,6 @@
-import { RefreshCwIcon } from 'lucide-react'
+import { DownloadIcon, RefreshCwIcon } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import {
   Card,
   CardAction,
@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { exportWorkbookUrl } from '@/lib/api'
 import type { Report } from '@/lib/types'
 
 interface ReportSummaryProps {
@@ -28,7 +29,15 @@ export default function ReportSummary({
         <CardTitle className="text-xl font-semibold">
           {report.ticker} — {report.company}
         </CardTitle>
-        <CardAction>
+        <CardAction className="flex flex-wrap justify-end gap-2">
+          <a
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            href={exportWorkbookUrl(report.ticker)}
+            download
+          >
+            <DownloadIcon />
+            Download Excel
+          </a>
           <Button
             variant="outline"
             size="sm"

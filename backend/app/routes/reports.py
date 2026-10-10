@@ -10,13 +10,14 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.models.report import ReportResponse
 from app.core.settings import get_settings
 from app.db.database import get_session_factory
 from app.routes.deps import get_db, get_sec_client
+from app.services.excel_export import build_ticker_workbook
 from app.services.orchestration import ReportService
 from app.services.sec_client import SECClient
 
@@ -101,6 +102,22 @@ def get_report(
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/reports/{ticker}/export.xlsx")
+def export_report_xlsx(
+    ticker: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        content, filename = build_ticker_workbook(db, ticker)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/report/stream")

@@ -15,6 +15,7 @@ dependencies = [
     "psycopg2-binary>=2.9",
     "openai>=1.0",
     "langfuse>=4.14.3",
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -41,3 +42,4 @@ markers = [
     "integration: live SEC API tests (deselect with '-m \"not integration\"')",
 ]
 testpaths = ["tests"]
+pythonpath = ["."]
