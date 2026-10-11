@@ -4,7 +4,7 @@ This is a income statement analysis for public companies. Search a ticker, pull 
 
 ## Why I Built This 💡
 
-I wanted a faster way to read an earnings report. Instead of hunting through a filing for which lines changed, I wanted the year-over-year numbers calculated first, then a short explanation of what those changes mean.
+A local company wanted a faster to read an earnings report. Instead of hunting through a filing for which lines changed, he wanted the year-over-year numbers calculated first, then a short explanation of what those changes mean.
 
 ## How It Works
 
