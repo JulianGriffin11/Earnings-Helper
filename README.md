@@ -1,10 +1,12 @@
 # Earnings Helper
 
-This is a income statement analysis for public companies. Search a ticker, pull their SEC data, compute the changes in Python, and show a short debrief of what moved.
 
-## Why I Built This 💡
 
-A local company wanted a faster to read an earnings report. Instead of hunting through a filing for which lines changed, he wanted the year-over-year numbers calculated first, then a short explanation of what those changes mean.
+* PROJECT DEMO: https://youtu.be/Q7hNtjS_3Lk
+
+## What is this? 💡
+
+A local company wanted a faster to read an earnings report. Instead of hunting through a filing for which lines changed, he wanted the year-over-year numbers calculated first, then a short explanation of what those changes mean. This project achieves this and much more!
 
 ## How It Works
 
